@@ -6,6 +6,9 @@ on:
       - 'v*'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build-macos:
     runs-on: macos-latest
@@ -34,6 +37,8 @@ jobs:
 
       - name: Build macOS DMG
         run: npx electron-builder --mac
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload macOS DMG
         uses: actions/upload-artifact@v4
@@ -69,6 +74,8 @@ jobs:
 
       - name: Build Windows installer
         run: npx electron-builder --win
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload Windows installer
         uses: actions/upload-artifact@v4
@@ -109,6 +116,8 @@ jobs:
 
       - name: Build Linux AppImage
         run: npx electron-builder --linux AppImage
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload Linux AppImage
         uses: actions/upload-artifact@v4
