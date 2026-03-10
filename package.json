@@ -29,7 +29,6 @@
   },
   "build": {
     "appId": "com.qimiao.photo-layout-studio",
-    "publish": "never",
     "productName": "光影集排版Studio",
     "copyright": "Copyright © 2024 奇妙奇遇",
     "directories": {

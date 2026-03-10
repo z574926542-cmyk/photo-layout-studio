@@ -26,13 +26,14 @@ jobs:
       - name: Install Electron dependencies
         run: npm install
 
-      - name: Build frontend + macOS DMG
+      - name: Build frontend
         run: |
           cd web
           pnpm install
           pnpm build
-          cd ..
-          npx electron-builder --mac --publish never
+
+      - name: Build macOS DMG
+        run: npx electron-builder --mac -c.publish=never
 
       - name: Upload macOS DMG
         uses: actions/upload-artifact@v4
@@ -60,20 +61,20 @@ jobs:
       - name: Install Electron dependencies
         run: npm install
 
-      - name: Build frontend + Windows installer
+      - name: Build frontend
         run: |
           cd web
           pnpm install
           pnpm build
-          cd ..
-          npx electron-builder --win --publish never
+
+      - name: Build Windows installer
+        run: npx electron-builder --win -c.publish=never
 
       - name: Upload Windows installer
         uses: actions/upload-artifact@v4
         with:
           name: windows-installer
-          path: |
-            release/*.exe
+          path: release/*.exe
           if-no-files-found: error
 
   build-linux:
@@ -100,13 +101,14 @@ jobs:
       - name: Install Electron dependencies
         run: npm install
 
-      - name: Build frontend + Linux AppImage
+      - name: Build frontend
         run: |
           cd web
           pnpm install
           pnpm build
-          cd ..
-          npx electron-builder --linux AppImage --publish never
+
+      - name: Build Linux AppImage
+        run: npx electron-builder --linux AppImage -c.publish=never
 
       - name: Upload Linux AppImage
         uses: actions/upload-artifact@v4
