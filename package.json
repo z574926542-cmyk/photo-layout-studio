@@ -10,16 +10,11 @@
     "dev": "concurrently \"npm run dev:vite\" \"wait-on http://localhost:5173 && npm run dev:electron\"",
     "dev:vite": "cd web && pnpm dev",
     "dev:electron": "NODE_ENV=development electron .",
-    "build": "npm run build:web && npm run build:electron",
     "build:web": "cd web && pnpm build",
-    "build:electron": "electron-builder",
-    "build:win": "cd web && pnpm build && cd .. && electron-builder --win",
-    "build:mac": "cd web && pnpm build && cd .. && electron-builder --mac",
-    "build:linux": "cd web && pnpm build && cd .. && electron-builder --linux",
-    "pack": "electron-builder --dir"
-  },
-  "dependencies": {
-    "electron-updater": "^6.3.9"
+    "build:win": "npm run build:web && electron-builder --win --config.publish=null",
+    "build:mac": "npm run build:web && electron-builder --mac --config.publish=null",
+    "build:linux": "npm run build:web && electron-builder --linux AppImage --config.publish=null",
+    "pack": "electron-builder --dir --config.publish=null"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",
@@ -42,20 +37,10 @@
       "node_modules/**/*",
       "package.json"
     ],
-    "extraResources": [
-      {
-        "from": "assets",
-        "to": "assets"
-      }
-    ],
     "win": {
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
-        },
-        {
-          "target": "portable",
           "arch": ["x64"]
         }
       ],
@@ -65,14 +50,9 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "allowElevation": true,
-      "installerLanguages": ["zh_CN"],
-      "language": "2052",
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "光影集排版Studio",
-      "installerIcon": "assets/icon.png",
-      "uninstallerIcon": "assets/icon.png"
+      "shortcutName": "光影集排版Studio"
     },
     "mac": {
       "target": [
@@ -94,7 +74,7 @@
       }
     },
     "linux": {
-      "target": ["AppImage", "deb"],
+      "target": ["AppImage"],
       "icon": "assets/icon.png",
       "category": "Graphics"
     }

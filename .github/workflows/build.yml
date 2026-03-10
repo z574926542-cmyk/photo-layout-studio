@@ -24,7 +24,7 @@ jobs:
           version: '9'
 
       - name: Install Electron dependencies
-        run: npm install
+        run: npm install --no-package-lock
 
       - name: Build frontend
         run: |
@@ -33,7 +33,7 @@ jobs:
           pnpm build
 
       - name: Build macOS DMG
-        run: npx electron-builder --mac -c.publish=never
+        run: npx electron-builder --mac --config.publish=null
 
       - name: Upload macOS DMG
         uses: actions/upload-artifact@v4
@@ -59,7 +59,7 @@ jobs:
           version: '9'
 
       - name: Install Electron dependencies
-        run: npm install
+        run: npm install --no-package-lock
 
       - name: Build frontend
         run: |
@@ -68,7 +68,7 @@ jobs:
           pnpm build
 
       - name: Build Windows installer
-        run: npx electron-builder --win -c.publish=never
+        run: npx electron-builder --win --config.publish=null
 
       - name: Upload Windows installer
         uses: actions/upload-artifact@v4
@@ -99,7 +99,7 @@ jobs:
           sudo apt-get install -y rpm fakeroot dpkg
 
       - name: Install Electron dependencies
-        run: npm install
+        run: npm install --no-package-lock
 
       - name: Build frontend
         run: |
@@ -108,7 +108,7 @@ jobs:
           pnpm build
 
       - name: Build Linux AppImage
-        run: npx electron-builder --linux AppImage -c.publish=never
+        run: npx electron-builder --linux AppImage --config.publish=null
 
       - name: Upload Linux AppImage
         uses: actions/upload-artifact@v4
