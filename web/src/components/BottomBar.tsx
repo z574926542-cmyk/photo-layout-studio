@@ -61,12 +61,12 @@ export default function BottomBar() {
 
       {/* 版权声明（居中） */}
       <div
-        className="text-xs flex-shrink-0"
+        className="flex-shrink-0"
         style={{
-          color: "oklch(0.30 0.01 260)",
+          color: "oklch(0.55 0.01 260)",
           fontFamily: "system-ui, sans-serif",
-          fontSize: "0.6rem",
-          letterSpacing: "0.01em",
+          fontSize: "0.75rem",
+          letterSpacing: "0.02em",
           userSelect: "none",
         }}
       >

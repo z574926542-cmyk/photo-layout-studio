@@ -61,6 +61,7 @@ export default function StudioCanvas() {
   } = useStudio();
 
   const canvasRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<DragState>({ type: null, startX: 0, startY: 0, currentX: 0, currentY: 0 });
   const [drawingSlot, setDrawingSlot] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -68,6 +69,21 @@ export default function StudioCanvas() {
   // 画布显示尺寸
   const displayW = canvas.width * zoom;
   const displayH = canvas.height * zoom;
+
+  // 画布居中：每次 zoom 或画布尺寸变化后自动滚动到中心
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    // 延迟一帧确保 DOM 已更新
+    requestAnimationFrame(() => {
+      const scrollW = el.scrollWidth;
+      const scrollH = el.scrollHeight;
+      const clientW = el.clientWidth;
+      const clientH = el.clientHeight;
+      el.scrollLeft = Math.max(0, (scrollW - clientW) / 2);
+      el.scrollTop = Math.max(0, (scrollH - clientH) / 2);
+    });
+  }, [displayW, displayH]);
 
   // 获取画布相对坐标（百分比）
   const getCanvasPct = useCallback(
@@ -270,6 +286,7 @@ export default function StudioCanvas() {
 
   return (
     <div
+      ref={scrollRef}
       className="w-full h-full overflow-auto"
       style={{
         background: "oklch(0.10 0.01 260)",
