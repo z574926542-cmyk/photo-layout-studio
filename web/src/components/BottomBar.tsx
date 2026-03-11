@@ -59,6 +59,22 @@ export default function BottomBar() {
 
       <div className="flex-1" />
 
+      {/* 版权声明（居中） */}
+      <div
+        className="text-xs flex-shrink-0"
+        style={{
+          color: "oklch(0.30 0.01 260)",
+          fontFamily: "system-ui, sans-serif",
+          fontSize: "0.6rem",
+          letterSpacing: "0.01em",
+          userSelect: "none",
+        }}
+      >
+        本软件由「奇妙奇遇」提供技术支持与维护，未经授权严禁修改、复制或转载。
+      </div>
+
+      <div className="flex-1" />
+
       {/* 缩放滑块 */}
       <div className="flex items-center gap-2 flex-shrink-0">
         <span
