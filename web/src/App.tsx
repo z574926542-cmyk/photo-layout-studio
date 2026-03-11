@@ -1,29 +1,18 @@
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import NotFound from "@/pages/NotFound";
-import { Route, Switch } from "wouter";
-import { useHashLocation } from "wouter/use-hash-location";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
 
-function Router() {
-  return (
-    <Switch hook={useHashLocation}>
-      <Route path={"/"} component={Home} />
-      <Route path={"/404"} component={NotFound} />
-      <Route component={NotFound} />
-    </Switch>
-  );
-}
-
+// Electron 使用 file:// 协议加载，直接渲染 Home，不使用 hash 路由
+// 彻底避免 wouter hash 初始化时机问题导致的 404 闪现
 function App() {
   return (
     <ErrorBoundary>
       <ThemeProvider defaultTheme="dark">
         <TooltipProvider>
           <Toaster />
-          <Router />
+          <Home />
         </TooltipProvider>
       </ThemeProvider>
     </ErrorBoundary>

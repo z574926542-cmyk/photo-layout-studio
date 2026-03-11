@@ -73,33 +73,8 @@ export default function StudioCanvas() {
   const displayW = canvas.width * zoom;
   const displayH = canvas.height * zoom;
 
-  // 画布居中：用 ResizeObserver 等容器真实尺寸稳定后再滚动
-  // Electron 冷启动时 clientWidth/Height 可能为 0，需要等待布局完成
-  const centeredRef = useRef(false);
-  useEffect(() => {
-    centeredRef.current = false; // zoom/尺寸变化时重置
-    const el = scrollRef.current;
-    if (!el) return;
-
-    const doCenter = () => {
-      const clientW = el.clientWidth;
-      const clientH = el.clientHeight;
-      if (clientW === 0 || clientH === 0) return; // 容器还没渲染好
-      el.scrollLeft = Math.max(0, (el.scrollWidth - clientW) / 2);
-      el.scrollTop = Math.max(0, (el.scrollHeight - clientH) / 2);
-      centeredRef.current = true;
-    };
-
-    // 立即尝试
-    doCenter();
-
-    // 用 ResizeObserver 监听，等容器真正有尺寸后再居中
-    const ro = new ResizeObserver(() => {
-      if (!centeredRef.current) doCenter();
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [displayW, displayH]);
+  // 画布居中：纯 CSS 方案，外层容器用 flex 居中，内层用 minWidth/minHeight 支撑滚动
+  // 不依赖任何 JS 计算，彻底解决居中问题
 
   // 获取画布相对坐标（百分比）
   const getCanvasPct = useCallback(
@@ -310,12 +285,23 @@ export default function StudioCanvas() {
           radial-gradient(ellipse at 15% 15%, oklch(0.18 0.04 264 / 0.25) 0%, transparent 45%),
           radial-gradient(ellipse at 85% 85%, oklch(0.16 0.03 280 / 0.15) 0%, transparent 45%)
         `,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
       }}
       onWheel={handleWheel}
     >
+      {/* 内层 wrapper：minWidth/minHeight 确保画布比容器大时可以滚动，小时 flex 自动居中 */}
       <div
-        className="flex items-center justify-center p-8"
-        style={{ minWidth: displayW + 64, minHeight: displayH + 64 }}
+        style={{
+          padding: 32,
+          minWidth: displayW + 64,
+          minHeight: displayH + 64,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          boxSizing: "border-box",
+        }}
       >
       {/* 画布主体 */}
       <div

@@ -478,7 +478,7 @@ interface StudioContextValue {
   unfillSlot: (slotId: string) => void;
   autoFill: () => void;
   autoFillOrdered: (assetIds: string[]) => void;
-  uploadAssets: (files: FileList) => Promise<void>;
+  uploadAssets: (files: FileList) => Promise<Asset[]>;
   addAsset: (asset: Asset) => void;
   updateAsset: (id: string, updates: Partial<Asset>) => void;
   removeAsset: (id: string) => void;
@@ -574,14 +574,16 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     toast.success("已按顺序自动填充");
   }, []);
 
-  const uploadAssets = useCallback(async (files: FileList) => {
+  const uploadAssets = useCallback(async (files: FileList): Promise<Asset[]> => {
     const promises = Array.from(files).map(readImageFile);
     try {
       const assets = await Promise.all(promises);
       dispatch({ type: "ADD_ASSETS", assets });
       toast.success(`已上传 ${assets.length} 张照片`);
+      return assets;
     } catch {
       toast.error("上传失败，请检查文件格式");
+      return [];
     }
   }, []);
 

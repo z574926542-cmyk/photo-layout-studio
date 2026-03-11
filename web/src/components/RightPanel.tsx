@@ -158,9 +158,15 @@ export default function RightPanel() {
             .filter((a) => !assetsInAnyFolder.has(a.id))
             .map((a): ViewItem => ({ type: "asset", asset: a })),
         ]
-      : assets
-          .filter((a) => currentFolder?.assetIds.includes(a.id))
-          .map((a): ViewItem => ({ type: "asset", asset: a }));
+      : [
+          // 在文件夹内时，顶部显示其他文件夹，方便跨文件夹拖拽移动
+          ...folders
+            .filter((f) => f.id !== currentFolderId)
+            .map((f): ViewItem => ({ type: "folder", folder: f })),
+          ...assets
+            .filter((a) => currentFolder?.assetIds.includes(a.id))
+            .map((a): ViewItem => ({ type: "asset", asset: a })),
+        ];
 
   // ─── Win 框选逻辑 ─────────────────────────────────────────
   const getGridRect = () => gridRef.current?.getBoundingClientRect();
@@ -236,14 +242,26 @@ export default function RightPanel() {
     setRubberBand(rb);
     setSelectedIds(new Set()); // 开始新框选时清空
     e.preventDefault();
-  };
-
-  // ─── 上传 ─────────────────────────────────────────────────
+  };  // ─── 上传（如果在文件夹内，直接归入当前文件夹） ─────────────────────────
+  const assignToCurrentFolder = useCallback((newAssets: Asset[]) => {
+    if (!currentFolderId || newAssets.length === 0) return;
+    setFolders((prev) => {
+      const updated = prev.map((f) =>
+        f.id === currentFolderId
+          ? { ...f, assetIds: [...f.assetIds, ...newAssets.map((a) => a.id).filter((id) => !f.assetIds.includes(id))] }
+          : f
+      );
+      persistFolders(updated);
+      return updated;
+    });
+  }, [currentFolderId]);
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files?.length) await uploadAssets(e.target.files);
+    if (e.target.files?.length) {
+      const newAssets = await uploadAssets(e.target.files);
+      assignToCurrentFolder(newAssets);
+    }
     e.target.value = "";
   };
-
   const handleDrop = useCallback(
     async (e: React.DragEvent) => {
       e.preventDefault();
@@ -254,12 +272,12 @@ export default function RightPanel() {
         if (imageFiles.length === 0) { toast.error("请上传图片文件（JPG/PNG/WebP 等）"); return; }
         const dt = new DataTransfer();
         imageFiles.forEach((f) => dt.items.add(f));
-        await uploadAssets(dt.files);
+        const newAssets = await uploadAssets(dt.files);
+        assignToCurrentFolder(newAssets);
       }
     },
-    [uploadAssets]
+    [uploadAssets, assignToCurrentFolder]
   );
-
   const handleFolderDrop = (e: React.DragEvent, folderId: string) => {
     e.preventDefault();
     e.stopPropagation();
