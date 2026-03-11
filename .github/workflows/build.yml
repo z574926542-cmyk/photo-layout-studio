@@ -24,7 +24,7 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: '9'
+          version: '10'
 
       - name: Install Electron dependencies
         run: npm install
@@ -32,7 +32,7 @@ jobs:
       - name: Build frontend
         run: |
           cd web
-          pnpm install
+          pnpm install --no-frozen-lockfile
           pnpm build
 
       - name: Build macOS DMG
@@ -61,7 +61,7 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: '9'
+          version: '10'
 
       - name: Install Electron dependencies
         run: npm install
@@ -69,7 +69,7 @@ jobs:
       - name: Build frontend
         run: |
           cd web
-          pnpm install
+          pnpm install --no-frozen-lockfile
           pnpm build
 
       - name: Build Windows installer
@@ -98,7 +98,7 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: '9'
+          version: '10'
 
       - name: Install system dependencies
         run: |
@@ -111,7 +111,7 @@ jobs:
       - name: Build frontend
         run: |
           cd web
-          pnpm install
+          pnpm install --no-frozen-lockfile
           pnpm build
 
       - name: Build Linux AppImage
