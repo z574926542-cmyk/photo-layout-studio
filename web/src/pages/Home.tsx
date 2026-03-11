@@ -176,7 +176,7 @@ function StudioLayout() {
 
         {/* 中央画布区 */}
         <div
-          className="flex-1 overflow-auto relative"
+          className="flex-1 overflow-auto relative flex items-center justify-center"
           data-canvas-container="true"
         >
           <StudioCanvas />

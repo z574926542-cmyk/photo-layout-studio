@@ -17,15 +17,16 @@ import type {
   LayoutScheme,
   EditorMode,
   LayoutTemplate,
-  SavedTemplate,
 } from "@/lib/types";
+import type { TemplateIndex } from "@/lib/templateDb";
 import {
-  loadSavedTemplates,
-  saveTemplateToLibrary,
-  deleteTemplateFromLibrary as deleteFromStore,
-  renameTemplateInLibrary,
-  generateTemplateThumbnail,
-} from "@/lib/templateStore";
+  loadTemplateIndex,
+  saveTemplate as saveTemplateToDb,
+  deleteTemplate as deleteFromDb,
+  renameTemplate as renameInDb,
+  loadTemplateDetail,
+  migrateFromLegacyStorage,
+} from "@/lib/templateDb";
 import {
   genId,
   smartAutoFill,
@@ -73,6 +74,7 @@ type Action =
   | { type: "ADD_ASSETS"; assets: Asset[] }
   | { type: "UPDATE_ASSET"; id: string; updates: Partial<Asset> }
   | { type: "REMOVE_ASSET"; id: string }
+  | { type: "REMOVE_ASSETS"; ids: string[] }
   | { type: "FILL_SLOT"; slotId: string; assetId: string }
   | { type: "UNFILL_SLOT"; slotId: string }
   | { type: "AUTO_FILL" }
@@ -203,6 +205,15 @@ function reducer(state: StudioState, action: Action): StudioState {
       const newAssets = state.assets.filter((a) => a.id !== action.id);
       const newSlots = state.slots.map((s) =>
         s.assetId === action.id ? { ...s, assetId: null } : s
+      );
+      return { ...state, assets: newAssets, slots: newSlots };
+    }
+
+    case "REMOVE_ASSETS": {
+      const idSet = new Set(action.ids);
+      const newAssets = state.assets.filter((a) => !idSet.has(a.id));
+      const newSlots = state.slots.map((s) =>
+        s.assetId && idSet.has(s.assetId) ? { ...s, assetId: null } : s
       );
       return { ...state, assets: newAssets, slots: newSlots };
     }
@@ -448,6 +459,7 @@ interface StudioContextValue {
   addAsset: (asset: Asset) => void;
   updateAsset: (id: string, updates: Partial<Asset>) => void;
   removeAsset: (id: string) => void;
+  removeAssets: (ids: string[]) => void;
   uploadBackground: (file: File) => Promise<void>;
   clearBackground: () => void;
   newCanvas: (width: number, height: number) => void;
@@ -461,8 +473,8 @@ interface StudioContextValue {
   exportPng: () => Promise<void>;
   saveAsTemplate: (name: string, author?: string, description?: string) => void;
   importTemplate: (file: File) => Promise<void>;
-  /** 模板库：持久化到 LocalStorage 的模板列表 */
-  savedTemplates: SavedTemplate[];
+  /** 模板库：持久化到 IndexedDB 的模板索引列表（不含底图，极小） */
+  savedTemplates: TemplateIndex[];
   /** 从模板库加载一个模板到画布 */
   loadTemplateFromLibrary: (localId: string) => void;
   /** 从模板库删除一个模板 */
@@ -481,11 +493,17 @@ const StudioContext = createContext<StudioContextValue | null>(null);
 export function StudioProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(reducer, initialState);
 
-  // 模板库状态：从 LocalStorage 初始化，关闭重启后仍存在
-  const [savedTemplates, setSavedTemplates] = React.useState<SavedTemplate[]>(() => loadSavedTemplates());
-
+   // 模板库状态：从 localStorage 索引层初始化（极小，启动即可用）
+  const [savedTemplates, setSavedTemplates] = React.useState<TemplateIndex[]>(() => loadTemplateIndex());
   const refreshTemplateLibrary = useCallback(() => {
-    setSavedTemplates(loadSavedTemplates());
+    setSavedTemplates(loadTemplateIndex());
+  }, []);
+  // 启动时迁移旧版 localStorage 数据到 IndexedDB（一次性）
+  useEffect(() => {
+    migrateFromLegacyStorage().then(() => {
+      setSavedTemplates(loadTemplateIndex());
+    }).catch(console.warn);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const canUndo = state.historyIndex > 0;
@@ -546,6 +564,10 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
 
   const removeAsset = useCallback((id: string) => {
     dispatch({ type: "REMOVE_ASSET", id });
+  }, []);
+
+  const removeAssets = useCallback((ids: string[]) => {
+    dispatch({ type: "REMOVE_ASSETS", ids });
   }, []);
 
   const uploadBackground = useCallback(async (file: File) => {
@@ -664,31 +686,25 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       dispatch({ type: 'SET_ZOOM', zoom: fitZoom });
       dispatch({ type: 'SELECT_SLOT', id: null });
 
-      // 自动持久化到模板库（导入即保存）
-      try {
-        const thumbnail = generateTemplateThumbnail(tpl);
-        const saved = saveTemplateToLibrary(tpl, thumbnail);
-        setSavedTemplates(loadSavedTemplates());
-        toast.success(`模板「${tpl.name}」导入并已保存到模板库！${newSlots.length} 个图框已就位`);
-        void saved; // 避免 unused 警告
-      } catch {
-        // 持久化失败不影响导入成功
-        toast.success(`模板「${tpl.name}」导入成功！${newSlots.length} 个图框已就位（注：本地存储空间不足，模板未保存到库）`);
-      }
+      // 自动持久化到 IndexedDB（导入即保存，不阻塞 UI）
+      saveTemplateToDb(tpl).then((entry) => {
+        setSavedTemplates(loadTemplateIndex());
+        toast.success(`模板「${entry.name}」导入并已保存到模板库！${newSlots.length} 个图框已就位`);
+      }).catch(() => {
+        toast.success(`模板「${tpl.name}」导入成功！${newSlots.length} 个图框已就位（注：存储失败，模板未保存到库）`);
+      });
     } catch (err) {
       toast.error(`导入失败：${err instanceof Error ? err.message : '未知错误'}`);
     }
   }, []);
 
-  // 从模板库加载模板到画布
-  const loadTemplateFromLibrary = useCallback((localId: string) => {
-    const templates = loadSavedTemplates();
-    const entry = templates.find((t) => t.localId === localId);
-    if (!entry) {
+  // 从模板库加载模板到画布（异步读取 IndexedDB 详情层）
+  const loadTemplateFromLibrary = useCallback(async (localId: string) => {
+    const tpl = await loadTemplateDetail(localId);
+    if (!tpl) {
       toast.error('模板不存在或已被删除');
       return;
     }
-    const tpl = entry.template;
     const newSlots = templateSlotsToSlots(tpl.slots);
     const newCanvas = {
       width: tpl.canvas.width,
@@ -706,17 +722,18 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     toast.success(`已加载模板「${tpl.name}」，请上传照片填充图框`);
   }, []);
 
-  // 从模板库删除模板
+  // 从模板库删除模板（异步，同时清除 IndexedDB 详情+缩略图）
   const deleteTemplateFromLibrary = useCallback((localId: string) => {
-    deleteFromStore(localId);
-    setSavedTemplates(loadSavedTemplates());
-    toast.success('模板已从库中删除');
+    deleteFromDb(localId).then(() => {
+      setSavedTemplates(loadTemplateIndex());
+      toast.success('模板已从库中删除');
+    }).catch(() => toast.error('删除失败，请重试'));
   }, []);
 
-  // 重命名模板库中的模板
+  // 重命名模板库中的模板（只更新索引层，同步）
   const renameTemplate = useCallback((localId: string, newName: string) => {
-    renameTemplateInLibrary(localId, newName);
-    setSavedTemplates(loadSavedTemplates());
+    renameInDb(localId, newName);
+    setSavedTemplates(loadTemplateIndex());
   }, []);
 
   // 键盘快捷键
@@ -775,6 +792,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     addAsset,
     updateAsset,
     removeAsset,
+    removeAssets,
     uploadBackground,
     clearBackground,
     newCanvas,

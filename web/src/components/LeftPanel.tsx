@@ -3,15 +3,18 @@
 // Design: 专业暗夜工作台 — 玻璃磨砂面板
 // 功能: 画布设置、图框精调、方案管理、预设模板
 // ============================================================
-import React, { useState, useRef, useCallback } from "react";
+import React, { useState, useRef, useCallback, useEffect } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { useStudio } from "@/contexts/StudioContext";
 import { PRESET_TEMPLATES, round } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import {
   Lock, Unlock, Trash2, Plus, Save, FolderOpen,
   ChevronDown, ChevronRight, Pencil, Check, X,
-  Image, Layers, LayoutTemplate, Bookmark, PackagePlus, Upload,
+  Image, Layers, LayoutTemplate, Bookmark, PackagePlus, Upload, Loader2,
 } from "lucide-react";
+import type { TemplateIndex } from "@/lib/templateDb";
+import { getThumbnail, loadTemplateDetail } from "@/lib/templateDb";
 import { toast } from "sonner";
 
 type PanelSection = "canvas" | "slot" | "schemes" | "presets" | "templates";
@@ -603,6 +606,67 @@ function SchemesSection() {
   );
 }
 
+// ─── 懒加载缩略图子组件 ─────────────────────────────────────────
+function LazyThumbnail({ entry }: { entry: TemplateIndex }) {
+  const [thumb, setThumb] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([io]) => {
+        if (io.isIntersecting && !thumb && !loading) {
+          setLoading(true);
+          loadTemplateDetail(entry.id).then((tpl) => {
+            if (!tpl) { setLoading(false); return; }
+            getThumbnail(entry.id, tpl)
+              .then((url) => { setThumb(url); setLoading(false); })
+              .catch(() => setLoading(false));
+          }).catch(() => setLoading(false));
+          observer.disconnect();
+        }
+      },
+      { threshold: 0.1 }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entry.id]);
+
+  return (
+    <div
+      ref={ref}
+      className="w-full relative overflow-hidden"
+      style={{ height: "72px", background: "oklch(0.13 0.01 260)" }}
+    >
+      {thumb ? (
+        <img src={thumb} alt={entry.name} className="w-full h-full object-cover" style={{ opacity: 0.9 }} />
+      ) : loading ? (
+        <div className="w-full h-full flex items-center justify-center">
+          <Loader2 size={16} className="animate-spin" style={{ color: "oklch(0.45 0.01 260)" }} />
+        </div>
+      ) : (
+        <div className="w-full h-full flex items-center justify-center">
+          <LayoutTemplate size={18} style={{ color: "oklch(0.35 0.01 260)" }} />
+        </div>
+      )}
+      <div
+        className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded text-xs"
+        style={{
+          background: "oklch(0 0 0 / 0.65)",
+          color: "oklch(0.85 0.008 260)",
+          fontSize: "0.6rem",
+          backdropFilter: "blur(4px)",
+        }}
+      >
+        {entry.slotCount} 框
+      </div>
+    </div>
+  );
+}
+
 // ─── 模板管理区块 ─────────────────────────────────────────────
 function TemplatesSection() {
   const {
@@ -623,6 +687,15 @@ function TemplatesSection() {
   const [renameValue, setRenameValue] = useState("");
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
+  // 虚拟滚动容器
+  const listRef = useRef<HTMLDivElement>(null);
+  const rowVirtualizer = useVirtualizer({
+    count: savedTemplates.length,
+    getScrollElement: () => listRef.current,
+    estimateSize: () => 200, // 每个模板卡片预估高度
+    overscan: 3,
+  });
+
   const handleSave = () => {
     const name = tplName.trim() || `模板-${canvas.width}×${canvas.height}`;
     saveAsTemplate(name, tplAuthor.trim() || undefined);
@@ -638,9 +711,9 @@ function TemplatesSection() {
     e.target.value = "";
   };
 
-  const handleRenameConfirm = (localId: string) => {
+  const handleRenameConfirm = (id: string) => {
     const trimmed = renameValue.trim();
-    if (trimmed) renameTemplate(localId, trimmed);
+    if (trimmed) renameTemplate(id, trimmed);
     setRenamingId(null);
     setRenameValue("");
   };
@@ -801,168 +874,170 @@ function TemplatesSection() {
             </div>
           </div>
         ) : (
-          <div className="space-y-2">
-            {savedTemplates.map((entry) => (
-              <div
-                key={entry.localId}
-                className="rounded-lg overflow-hidden transition-all"
-                style={{
-                  background: "oklch(0.17 0.015 260)",
-                  border: "1px solid oklch(1 0 0 / 0.08)",
-                }}
-              >
-                {/* 缩略图 */}
-                {entry.thumbnail && (
+          /* 虚拟滚动容器：固定高度，只渲染可见区域内的卡片 */
+          <div
+            ref={listRef}
+            style={{ height: "420px", overflowY: "auto", overflowX: "hidden" }}
+          >
+            <div
+              style={{
+                height: `${rowVirtualizer.getTotalSize()}px`,
+                width: "100%",
+                position: "relative",
+              }}
+            >
+              {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                const entry = savedTemplates[virtualRow.index];
+                return (
                   <div
-                    className="w-full relative overflow-hidden"
-                    style={{ height: "72px", background: "oklch(0.13 0.01 260)" }}
+                    key={entry.id}
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      left: 0,
+                      width: "100%",
+                      transform: `translateY(${virtualRow.start}px)`,
+                      paddingBottom: "8px",
+                    }}
                   >
-                    <img
-                      src={entry.thumbnail}
-                      alt={entry.template.name}
-                      className="w-full h-full object-cover"
-                      style={{ opacity: 0.9 }}
-                    />
-                    {/* 图框数量标签 */}
                     <div
-                      className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded text-xs"
+                      className="rounded-lg overflow-hidden transition-all"
                       style={{
-                        background: "oklch(0 0 0 / 0.65)",
-                        color: "oklch(0.85 0.008 260)",
-                        fontSize: "0.6rem",
-                        backdropFilter: "blur(4px)",
+                        background: "oklch(0.17 0.015 260)",
+                        border: "1px solid oklch(1 0 0 / 0.08)",
                       }}
                     >
-                      {entry.template.slots.length} 框
-                    </div>
-                  </div>
-                )}
+                      {/* 懒加载缩略图 */}
+                      <LazyThumbnail entry={entry} />
 
-                {/* 模板信息 */}
-                <div className="px-2.5 py-2">
-                  {renamingId === entry.localId ? (
-                    <div className="flex gap-1 mb-1.5">
-                      <input
-                        type="text"
-                        value={renameValue}
-                        onChange={(e) => setRenameValue(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") handleRenameConfirm(entry.localId);
-                          if (e.key === "Escape") { setRenamingId(null); setRenameValue(""); }
-                        }}
-                        autoFocus
-                        className="flex-1 px-1.5 py-1 rounded text-xs"
-                        style={{
-                          background: "oklch(0.20 0.015 260)",
-                          border: "1px solid oklch(0.58 0.22 264 / 0.4)",
-                          color: "oklch(0.92 0.008 260)",
-                          outline: "none",
-                        }}
-                      />
-                      <button
-                        onClick={() => handleRenameConfirm(entry.localId)}
-                        className="px-1.5 py-1 rounded text-xs"
-                        style={{ background: "oklch(0.58 0.22 264 / 0.2)", color: "oklch(0.72 0.12 264)" }}
-                      >
-                        <Check size={11} />
-                      </button>
-                      <button
-                        onClick={() => { setRenamingId(null); setRenameValue(""); }}
-                        className="px-1.5 py-1 rounded text-xs"
-                        style={{ background: "oklch(1 0 0 / 0.05)", color: "oklch(0.55 0.01 260)" }}
-                      >
-                        <X size={11} />
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="flex items-start justify-between gap-1 mb-1.5">
-                      <div className="flex-1 min-w-0">
-                        <div
-                          className="text-xs font-medium truncate"
-                          style={{ color: "oklch(0.88 0.008 260)" }}
-                        >
-                          {entry.template.name}
-                        </div>
-                        {entry.template.author && (
-                          <div
-                            className="text-xs truncate mt-0.5"
-                            style={{ color: "oklch(0.50 0.01 260)", fontSize: "0.65rem" }}
-                          >
-                            {entry.template.author}
+                      {/* 模板信息 */}
+                      <div className="px-2.5 py-2">
+                        {renamingId === entry.id ? (
+                          <div className="flex gap-1 mb-1.5">
+                            <input
+                              type="text"
+                              value={renameValue}
+                              onChange={(e) => setRenameValue(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") handleRenameConfirm(entry.id);
+                                if (e.key === "Escape") { setRenamingId(null); setRenameValue(""); }
+                              }}
+                              autoFocus
+                              className="flex-1 px-1.5 py-1 rounded text-xs"
+                              style={{
+                                background: "oklch(0.20 0.015 260)",
+                                border: "1px solid oklch(0.58 0.22 264 / 0.4)",
+                                color: "oklch(0.92 0.008 260)",
+                                outline: "none",
+                              }}
+                            />
+                            <button
+                              onClick={() => handleRenameConfirm(entry.id)}
+                              className="px-1.5 py-1 rounded text-xs"
+                              style={{ background: "oklch(0.58 0.22 264 / 0.2)", color: "oklch(0.72 0.12 264)" }}
+                            >
+                              <Check size={11} />
+                            </button>
+                            <button
+                              onClick={() => { setRenamingId(null); setRenameValue(""); }}
+                              className="px-1.5 py-1 rounded text-xs"
+                              style={{ background: "oklch(1 0 0 / 0.05)", color: "oklch(0.55 0.01 260)" }}
+                            >
+                              <X size={11} />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-start justify-between gap-1 mb-1.5">
+                            <div className="flex-1 min-w-0">
+                              <div
+                                className="text-xs font-medium truncate"
+                                style={{ color: "oklch(0.88 0.008 260)" }}
+                              >
+                                {entry.name}
+                              </div>
+                              {entry.author && (
+                                <div
+                                  className="text-xs truncate mt-0.5"
+                                  style={{ color: "oklch(0.50 0.01 260)", fontSize: "0.65rem" }}
+                                >
+                                  {entry.author}
+                                </div>
+                              )}
+                              <div
+                                className="text-xs mt-0.5"
+                                style={{ color: "oklch(0.42 0.01 260)", fontSize: "0.6rem" }}
+                              >
+                                {entry.width}×{entry.height}px
+                                {" · "}
+                                {new Date(entry.importedAt).toLocaleDateString("zh-CN", { month: "short", day: "numeric" })}
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => { setRenamingId(entry.id); setRenameValue(entry.name); }}
+                              className="p-1 rounded flex-shrink-0 transition-all"
+                              style={{ color: "oklch(0.45 0.01 260)" }}
+                              title="重命名"
+                            >
+                              <Pencil size={11} />
+                            </button>
                           </div>
                         )}
-                        <div
-                          className="text-xs mt-0.5"
-                          style={{ color: "oklch(0.42 0.01 260)", fontSize: "0.6rem" }}
-                        >
-                          {entry.template.canvas.width}×{entry.template.canvas.height}px
-                          {" · "}
-                          {new Date(entry.importedAt).toLocaleDateString("zh-CN", { month: "short", day: "numeric" })}
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => { setRenamingId(entry.localId); setRenameValue(entry.template.name); }}
-                        className="p-1 rounded flex-shrink-0 transition-all"
-                        style={{ color: "oklch(0.45 0.01 260)" }}
-                        title="重命名"
-                      >
-                        <Pencil size={11} />
-                      </button>
-                    </div>
-                  )}
 
-                  {/* 操作按钮 */}
-                  {confirmDeleteId === entry.localId ? (
-                    <div className="flex gap-1">
-                      <div className="flex-1 text-xs" style={{ color: "oklch(0.75 0.18 25)", fontSize: "0.65rem", lineHeight: 1.4 }}>
-                        确认删除？此操作不可撤销
+                        {/* 操作按鈕 */}
+                        {confirmDeleteId === entry.id ? (
+                          <div className="flex gap-1">
+                            <div className="flex-1 text-xs" style={{ color: "oklch(0.75 0.18 25)", fontSize: "0.65rem", lineHeight: 1.4 }}>
+                              确认删除？此操作不可撤销
+                            </div>
+                            <button
+                              onClick={() => { deleteTemplateFromLibrary(entry.id); setConfirmDeleteId(null); }}
+                              className="px-2 py-1 rounded text-xs font-medium"
+                              style={{ background: "oklch(0.55 0.22 25 / 0.2)", color: "oklch(0.75 0.18 25)" }}
+                            >
+                              删除
+                            </button>
+                            <button
+                              onClick={() => setConfirmDeleteId(null)}
+                              className="px-2 py-1 rounded text-xs"
+                              style={{ background: "oklch(1 0 0 / 0.05)", color: "oklch(0.55 0.01 260)" }}
+                            >
+                              取消
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex gap-1.5">
+                            <button
+                              onClick={() => loadTemplateFromLibrary(entry.id)}
+                              className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded text-xs font-medium transition-all"
+                              style={{
+                                background: "oklch(0.58 0.22 264 / 0.15)",
+                                border: "1px solid oklch(0.58 0.22 264 / 0.25)",
+                                color: "oklch(0.72 0.12 264)",
+                              }}
+                            >
+                              <FolderOpen size={11} />
+                              加载
+                            </button>
+                            <button
+                              onClick={() => setConfirmDeleteId(entry.id)}
+                              className="px-2 py-1.5 rounded text-xs transition-all"
+                              style={{
+                                background: "oklch(0.55 0.22 25 / 0.08)",
+                                border: "1px solid oklch(0.55 0.22 25 / 0.2)",
+                                color: "oklch(0.65 0.18 25)",
+                              }}
+                              title="从模板库删除"
+                            >
+                              <Trash2 size={11} />
+                            </button>
+                          </div>
+                        )}
                       </div>
-                      <button
-                        onClick={() => { deleteTemplateFromLibrary(entry.localId); setConfirmDeleteId(null); }}
-                        className="px-2 py-1 rounded text-xs font-medium"
-                        style={{ background: "oklch(0.55 0.22 25 / 0.2)", color: "oklch(0.75 0.18 25)" }}
-                      >
-                        删除
-                      </button>
-                      <button
-                        onClick={() => setConfirmDeleteId(null)}
-                        className="px-2 py-1 rounded text-xs"
-                        style={{ background: "oklch(1 0 0 / 0.05)", color: "oklch(0.55 0.01 260)" }}
-                      >
-                        取消
-                      </button>
                     </div>
-                  ) : (
-                    <div className="flex gap-1.5">
-                      <button
-                        onClick={() => loadTemplateFromLibrary(entry.localId)}
-                        className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded text-xs font-medium transition-all"
-                        style={{
-                          background: "oklch(0.58 0.22 264 / 0.15)",
-                          border: "1px solid oklch(0.58 0.22 264 / 0.25)",
-                          color: "oklch(0.72 0.12 264)",
-                        }}
-                      >
-                        <FolderOpen size={11} />
-                        加载
-                      </button>
-                      <button
-                        onClick={() => setConfirmDeleteId(entry.localId)}
-                        className="px-2 py-1.5 rounded text-xs transition-all"
-                        style={{
-                          background: "oklch(0.55 0.22 25 / 0.08)",
-                          border: "1px solid oklch(0.55 0.22 25 / 0.2)",
-                          color: "oklch(0.65 0.18 25)",
-                        }}
-                        title="从模板库删除"
-                      >
-                        <Trash2 size={11} />
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
 
