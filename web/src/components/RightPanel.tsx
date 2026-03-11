@@ -48,6 +48,7 @@ export default function RightPanel() {
     fillSlot,
     unfillSlot,
     autoFill,
+    autoFillOrdered,
     updateAsset,
   } = useStudio();
   const { assets, slots, selectedSlotId } = state;
@@ -380,7 +381,20 @@ export default function RightPanel() {
             style={{ background: "oklch(0.58 0.22 264 / 0.15)", border: "1px solid oklch(0.58 0.22 264 / 0.3)", color: "oklch(0.75 0.12 264)" }}>
             <Upload size={12} /> 上传照片
           </button>
-          <button onClick={autoFill} disabled={emptyCount === 0 || assets.length === 0}
+          <button
+            onClick={() => {
+              // 按当前文件夹顺序填充：当前文件夹内的图片按显示顺序，根目录则所有未分组图片
+              const orderedAssets = viewItems
+                .filter((item): item is { type: "asset"; asset: Asset } => item.type === "asset")
+                .map((item) => item.asset.id);
+              if (orderedAssets.length > 0) {
+                autoFillOrdered(orderedAssets);
+              } else {
+                autoFill();
+              }
+            }}
+            disabled={emptyCount === 0 || assets.length === 0}
+            title={currentFolderId ? `按「${currentFolder?.name}」文件夹顺序填充图框` : "按当前素材库顺序填充图框"}
             className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded text-xs transition-all disabled:opacity-35"
             style={{ background: "oklch(0.62 0.20 45 / 0.15)", border: "1px solid oklch(0.62 0.20 45 / 0.3)", color: "oklch(0.80 0.14 55)" }}>
             <Zap size={12} /> 自动填充

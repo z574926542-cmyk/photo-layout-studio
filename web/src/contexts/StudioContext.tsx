@@ -78,6 +78,8 @@ type Action =
   | { type: "FILL_SLOT"; slotId: string; assetId: string }
   | { type: "UNFILL_SLOT"; slotId: string }
   | { type: "AUTO_FILL" }
+  | { type: "CLEAR_ALL_FILLS" }
+  | { type: "AUTO_FILL_ORDERED"; assetIds: string[] }
   | { type: "LOAD_SCHEME"; scheme: LayoutScheme }
   | { type: "SAVE_SCHEME"; name: string }
   | { type: "DELETE_SCHEME"; id: string }
@@ -239,6 +241,25 @@ function reducer(state: StudioState, action: Action): StudioState {
       if (fillMap.size === 0) return state;
       const newSlots = state.slots.map((s) => {
         const assetId = fillMap.get(s.id);
+        return assetId ? { ...s, assetId, offsetX: 0, offsetY: 0, scale: 1 } : s;
+      });
+      return pushHistory({ ...state, slots: newSlots });
+    }
+
+    case "CLEAR_ALL_FILLS": {
+      if (state.slots.every((s) => !s.assetId)) return state;
+      const newSlots = state.slots.map((s) => ({ ...s, assetId: null, offsetX: 0, offsetY: 0, scale: 1 }));
+      return pushHistory({ ...state, slots: newSlots, selectedSlotId: null });
+    }
+
+    case "AUTO_FILL_ORDERED": {
+      const emptySlots = state.slots.filter((s) => !s.assetId);
+      if (emptySlots.length === 0 || action.assetIds.length === 0) return state;
+      const emptySlotIds = emptySlots.map((s) => s.id);
+      const newSlots = state.slots.map((s) => {
+        const idx = emptySlotIds.indexOf(s.id);
+        if (idx === -1) return s;
+        const assetId = action.assetIds[idx];
         return assetId ? { ...s, assetId, offsetX: 0, offsetY: 0, scale: 1 } : s;
       });
       return pushHistory({ ...state, slots: newSlots });
@@ -452,9 +473,11 @@ interface StudioContextValue {
   deleteSelectedSlot: () => void;
   addSlot: (slot: Slot) => void;
   clearSlots: () => void;
+  clearAllFills: () => void;
   fillSlot: (slotId: string, assetId: string) => void;
   unfillSlot: (slotId: string) => void;
   autoFill: () => void;
+  autoFillOrdered: (assetIds: string[]) => void;
   uploadAssets: (files: FileList) => Promise<void>;
   addAsset: (asset: Asset) => void;
   updateAsset: (id: string, updates: Partial<Asset>) => void;
@@ -540,7 +563,15 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
 
   const autoFill = useCallback(() => {
     dispatch({ type: "AUTO_FILL" });
-    toast.success("智能自动排版完成");
+    toast.success("自动填充完成");
+  }, []);
+  const clearAllFills = useCallback(() => {
+    dispatch({ type: "CLEAR_ALL_FILLS" });
+    toast.success("已清空所有图框中的图片");
+  }, []);
+  const autoFillOrdered = useCallback((assetIds: string[]) => {
+    dispatch({ type: "AUTO_FILL_ORDERED", assetIds });
+    toast.success("已按顺序自动填充");
   }, []);
 
   const uploadAssets = useCallback(async (files: FileList) => {
@@ -785,9 +816,11 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     deleteSelectedSlot,
     addSlot,
     clearSlots,
+    clearAllFills,
     fillSlot,
     unfillSlot,
     autoFill,
+    autoFillOrdered,
     uploadAssets,
     addAsset,
     updateAsset,

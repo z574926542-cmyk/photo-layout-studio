@@ -59,6 +59,7 @@ export default function StudioCanvas() {
     selectSlot,
     updateSlot,
     fillSlot,
+    unfillSlot,
     setZoom,
   } = useStudio();
 
@@ -359,6 +360,7 @@ export default function StudioCanvas() {
             onResizeMouseDown={handleResizeMouseDown}
             onDrop={handleSlotDrop}
             onDragOver={handleSlotDragOver}
+            onUnfill={() => unfillSlot(slot.id)}
           />
         ))}
 
@@ -393,8 +395,8 @@ interface SlotRendererProps {
   onResizeMouseDown: (e: React.MouseEvent, slot: Slot, handle: ResizeHandle) => void;
   onDrop: (e: React.DragEvent, slotId: string) => void;
   onDragOver: (e: React.DragEvent) => void;
+  onUnfill: () => void;
 }
-
 function SlotRenderer({
   slot,
   asset,
@@ -404,6 +406,7 @@ function SlotRenderer({
   onResizeMouseDown,
   onDrop,
   onDragOver,
+  onUnfill,
 }: SlotRendererProps) {
   const hasFill = !!asset;
 
@@ -439,6 +442,18 @@ function SlotRenderer({
       {asset && (
         <div className="absolute inset-0 overflow-hidden">
           <AspectFillImage asset={asset} slot={slot} />
+          {/* 删除当前图片按鈕：悬停时显示，点击清空图框 */}
+          <button
+            className="absolute top-1 right-1 w-5 h-5 rounded flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-40"
+            style={{ background: "oklch(0.62 0.22 25 / 0.92)", border: "1px solid oklch(1 0 0 / 0.2)" }}
+            title="清空图片"
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => { e.stopPropagation(); onUnfill(); }}
+          >
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+              <path d="M2 2L8 8M8 2L2 8" stroke="white" strokeWidth="1.5" strokeLinecap="round"/>
+            </svg>
+          </button>
         </div>
       )}
 

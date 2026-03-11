@@ -21,6 +21,7 @@ export default function TopToolbar() {
     undo,
     redo,
     clearSlots,
+    clearAllFills,
     autoFill,
     exportPng,
     newCanvas,
@@ -127,7 +128,7 @@ export default function TopToolbar() {
         {/* 图框操作 */}
         <ToolButton
           onClick={autoFill}
-          title="智能自动排版"
+          title="自动填充：按宽高比将素材库中的图片依次填入空图框"
           className="gap-1.5 px-2.5 w-auto"
         >
           <Zap size={13} />
@@ -136,9 +137,9 @@ export default function TopToolbar() {
           </span>
         </ToolButton>
         <ToolButton
-          onClick={clearSlots}
-          disabled={slots.length === 0}
-          title="清除所有图框"
+          onClick={clearAllFills}
+          disabled={slots.length === 0 || slots.every((s: { assetId: string | null }) => !s.assetId)}
+          title="清空图片：清除所有图框中的图片，保留图框结构"
         >
           <Trash2 size={15} />
         </ToolButton>
