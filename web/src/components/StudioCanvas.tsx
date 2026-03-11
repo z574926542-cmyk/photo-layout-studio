@@ -10,6 +10,8 @@ import React, {
   useState,
   useEffect,
 } from "react";
+// centeredRef tracks whether initial centering has been done for current displayW/H
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { useStudio } from "@/contexts/StudioContext";
 import type { Slot, ResizeHandle } from "@/lib/types";
 import { toPct, clamp, round, createSlot } from "@/lib/utils";
@@ -70,19 +72,32 @@ export default function StudioCanvas() {
   const displayW = canvas.width * zoom;
   const displayH = canvas.height * zoom;
 
-  // 画布居中：每次 zoom 或画布尺寸变化后自动滚动到中心
+  // 画布居中：用 ResizeObserver 等容器真实尺寸稳定后再滚动
+  // Electron 冷启动时 clientWidth/Height 可能为 0，需要等待布局完成
+  const centeredRef = useRef(false);
   useEffect(() => {
+    centeredRef.current = false; // zoom/尺寸变化时重置
     const el = scrollRef.current;
     if (!el) return;
-    // 延迟一帧确保 DOM 已更新
-    requestAnimationFrame(() => {
-      const scrollW = el.scrollWidth;
-      const scrollH = el.scrollHeight;
+
+    const doCenter = () => {
       const clientW = el.clientWidth;
       const clientH = el.clientHeight;
-      el.scrollLeft = Math.max(0, (scrollW - clientW) / 2);
-      el.scrollTop = Math.max(0, (scrollH - clientH) / 2);
+      if (clientW === 0 || clientH === 0) return; // 容器还没渲染好
+      el.scrollLeft = Math.max(0, (el.scrollWidth - clientW) / 2);
+      el.scrollTop = Math.max(0, (el.scrollHeight - clientH) / 2);
+      centeredRef.current = true;
+    };
+
+    // 立即尝试
+    doCenter();
+
+    // 用 ResizeObserver 监听，等容器真正有尺寸后再居中
+    const ro = new ResizeObserver(() => {
+      if (!centeredRef.current) doCenter();
     });
+    ro.observe(el);
+    return () => ro.disconnect();
   }, [displayW, displayH]);
 
   // 获取画布相对坐标（百分比）

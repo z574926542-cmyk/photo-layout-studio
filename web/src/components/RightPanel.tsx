@@ -2,9 +2,9 @@
 // 奇妙奇遇光影集 排版 Studio — 右侧素材库面板
 // Design: 专业暗夜工作台 — 访达风格素材管理
 // 功能: 照片上传、文件夹管理（访达逻辑）、填入/裁剪/拖拽
-//       文件夹与图片混排、双击进入文件夹、面包屑导航、拖拽归类
+//       Win 风格蓝色框选批量选中、拖拽归入文件夹
 // ============================================================
-import React, { useRef, useCallback, useState } from "react";
+import React, { useRef, useCallback, useState, useEffect } from "react";
 import { useStudio } from "@/contexts/StudioContext";
 import {
   Upload, Trash2, Image, Zap, X, CheckCircle2, Crop,
@@ -31,6 +31,14 @@ function persistFolders(folders: AssetFolder[]) {
   localStorage.setItem(FOLDERS_KEY, JSON.stringify(folders));
 }
 
+// ─── 框选状态 ─────────────────────────────────────────────
+interface RubberBand {
+  startX: number;
+  startY: number;
+  currentX: number;
+  currentY: number;
+}
+
 export default function RightPanel() {
   const {
     state,
@@ -47,6 +55,7 @@ export default function RightPanel() {
   const [isDragOver, setIsDragOver] = useState(false);
   const [cropTarget, setCropTarget] = useState<Asset | null>(null);
 
+  // ─── 文件夹状态 ───────────────────────────────────────────
   const [folders, setFolders] = useState<AssetFolder[]>(loadFolders);
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
   const [creatingFolder, setCreatingFolder] = useState(false);
@@ -55,8 +64,16 @@ export default function RightPanel() {
   const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+
+  // ─── 选中状态 ─────────────────────────────────────────────
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [selectMode, setSelectMode] = useState(false);
+
+  // ─── Win 风格框选 ─────────────────────────────────────────
+  const gridRef = useRef<HTMLDivElement>(null);
+  const [rubberBand, setRubberBand] = useState<RubberBand | null>(null);
+  const rubberRef = useRef<RubberBand | null>(null);
+  const isDraggingRubber = useRef(false);
+  const itemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
   const saveFolders = (updated: AssetFolder[]) => {
     setFolders(updated);
@@ -101,6 +118,23 @@ export default function RightPanel() {
     saveFolders(updated);
   };
 
+  const moveSelectedToFolder = (folderId: string) => {
+    if (selectedIds.size === 0) return;
+    let updated = [...folders];
+    selectedIds.forEach((assetId) => {
+      updated = updated.map((f) => {
+        if (f.id === folderId) {
+          if (f.assetIds.includes(assetId)) return f;
+          return { ...f, assetIds: [...f.assetIds, assetId] };
+        }
+        return { ...f, assetIds: f.assetIds.filter((id) => id !== assetId) };
+      });
+    });
+    saveFolders(updated);
+    toast.success(`已将 ${selectedIds.size} 张图片移入文件夹`);
+    setSelectedIds(new Set());
+  };
+
   const removeFromFolder = (assetId: string) => {
     saveFolders(folders.map((f) => ({
       ...f,
@@ -127,10 +161,85 @@ export default function RightPanel() {
           .filter((a) => currentFolder?.assetIds.includes(a.id))
           .map((a): ViewItem => ({ type: "asset", asset: a }));
 
+  // ─── Win 框选逻辑 ─────────────────────────────────────────
+  const getGridRect = () => gridRef.current?.getBoundingClientRect();
+
+  const getIntersectingAssets = useCallback((rb: RubberBand): Set<string> => {
+    const grid = getGridRect();
+    if (!grid) return new Set();
+    const selLeft = Math.min(rb.startX, rb.currentX);
+    const selTop = Math.min(rb.startY, rb.currentY);
+    const selRight = Math.max(rb.startX, rb.currentX);
+    const selBottom = Math.max(rb.startY, rb.currentY);
+
+    const result = new Set<string>();
+    itemRefs.current.forEach((el, id) => {
+      const rect = el.getBoundingClientRect();
+      const itemLeft = rect.left - grid.left;
+      const itemTop = rect.top - grid.top;
+      const itemRight = rect.right - grid.left;
+      const itemBottom = rect.bottom - grid.top;
+      // 相交判断
+      if (
+        itemLeft < selRight &&
+        itemRight > selLeft &&
+        itemTop < selBottom &&
+        itemBottom > selTop
+      ) {
+        result.add(id);
+      }
+    });
+    return result;
+  }, []);
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isDraggingRubber.current || !rubberRef.current) return;
+      const grid = getGridRect();
+      if (!grid) return;
+      const currentX = e.clientX - grid.left;
+      const currentY = e.clientY - grid.top + (gridRef.current?.scrollTop ?? 0);
+      const updated = { ...rubberRef.current, currentX, currentY };
+      rubberRef.current = updated;
+      setRubberBand({ ...updated });
+      // 实时更新选中
+      setSelectedIds(getIntersectingAssets(updated));
+    };
+
+    const handleMouseUp = () => {
+      if (!isDraggingRubber.current) return;
+      isDraggingRubber.current = false;
+      rubberRef.current = null;
+      setRubberBand(null);
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [getIntersectingAssets]);
+
+  const handleGridMouseDown = (e: React.MouseEvent) => {
+    // 只在直接点击空白区域时触发框选（不是点击卡片）
+    if ((e.target as HTMLElement).closest("[data-item]")) return;
+    if (e.button !== 0) return;
+    const grid = getGridRect();
+    if (!grid) return;
+    const startX = e.clientX - grid.left;
+    const startY = e.clientY - grid.top + (gridRef.current?.scrollTop ?? 0);
+    const rb: RubberBand = { startX, startY, currentX: startX, currentY: startY };
+    rubberRef.current = rb;
+    isDraggingRubber.current = true;
+    setRubberBand(rb);
+    setSelectedIds(new Set()); // 开始新框选时清空
+    e.preventDefault();
+  };
+
+  // ─── 上传 ─────────────────────────────────────────────────
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files?.length) {
-      await uploadAssets(e.target.files);
-    }
+    if (e.target.files?.length) await uploadAssets(e.target.files);
     e.target.value = "";
   };
 
@@ -154,6 +263,11 @@ export default function RightPanel() {
     e.preventDefault();
     e.stopPropagation();
     setDragOverFolderId(null);
+    // 如果有多选，批量移入
+    if (selectedIds.size > 0) {
+      moveSelectedToFolder(folderId);
+      return;
+    }
     const assetId = e.dataTransfer.getData("assetId");
     if (!assetId) return;
     moveAssetToFolder(assetId, folderId);
@@ -166,25 +280,26 @@ export default function RightPanel() {
     toast.success("已填入图框");
   };
 
-  const toggleSelect = (id: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  };
-
   const handleBatchDelete = () => {
     if (selectedIds.size === 0) return;
     removeAssets(Array.from(selectedIds));
     saveFolders(folders.map((f) => ({ ...f, assetIds: f.assetIds.filter((id) => !selectedIds.has(id)) })));
     setSelectedIds(new Set());
-    setSelectMode(false);
     toast.success(`已删除 ${selectedIds.size} 张图片`);
   };
 
   const filledCount = slots.filter((s) => s.assetId !== null).length;
   const emptyCount = slots.filter((s) => s.assetId === null).length;
+
+  // 框选矩形的屏幕坐标（相对于 grid 容器）
+  const rubberStyle = rubberBand
+    ? {
+        left: Math.min(rubberBand.startX, rubberBand.currentX),
+        top: Math.min(rubberBand.startY, rubberBand.currentY),
+        width: Math.abs(rubberBand.currentX - rubberBand.startX),
+        height: Math.abs(rubberBand.currentY - rubberBand.startY),
+      }
+    : null;
 
   return (
     <>
@@ -211,22 +326,9 @@ export default function RightPanel() {
               style={{ color: "oklch(0.55 0.015 260)", fontFamily: "'Space Grotesk', sans-serif", letterSpacing: "0.1em" }}>
               素材库
             </span>
-            <div className="flex items-center gap-1">
-              <span className="text-xs" style={{ color: "oklch(0.45 0.01 260)", fontFamily: "monospace", fontSize: "0.7rem" }}>
-                {assets.length} 张
-              </span>
-              <button
-                onClick={() => { setSelectMode((v) => !v); setSelectedIds(new Set()); }}
-                className="px-1.5 py-0.5 rounded text-xs transition-all"
-                style={{
-                  background: selectMode ? "oklch(0.58 0.22 264 / 0.2)" : "transparent",
-                  color: selectMode ? "oklch(0.72 0.12 264)" : "oklch(0.40 0.01 260)",
-                  fontSize: "0.65rem",
-                }}
-              >
-                {selectMode ? "退出" : "多选"}
-              </button>
-            </div>
+            <span className="text-xs" style={{ color: "oklch(0.45 0.01 260)", fontFamily: "monospace", fontSize: "0.7rem" }}>
+              {assets.length} 张
+            </span>
           </div>
 
           {slots.length > 0 && (
@@ -252,22 +354,21 @@ export default function RightPanel() {
             </div>
           )}
 
-          {selectMode && (
+          {selectedIds.size > 0 && (
             <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
-              <span style={{ color: "oklch(0.55 0.01 260)", fontSize: "0.68rem" }}>已选 {selectedIds.size}</span>
-              <button onClick={() => setSelectedIds(new Set(assets.map((a) => a.id)))}
-                className="px-1.5 py-0.5 rounded"
-                style={{ background: "oklch(0.58 0.22 264 / 0.12)", color: "oklch(0.72 0.12 264)", fontSize: "0.65rem" }}>全选</button>
+              <span style={{ color: "oklch(0.72 0.12 264)", fontSize: "0.7rem", fontWeight: 600 }}>
+                已选 {selectedIds.size} 张
+              </span>
               <button onClick={() => setSelectedIds(new Set())}
                 className="px-1.5 py-0.5 rounded"
-                style={{ background: "oklch(1 0 0 / 0.06)", color: "oklch(0.50 0.01 260)", fontSize: "0.65rem" }}>清除</button>
-              {selectedIds.size > 0 && (
-                <button onClick={handleBatchDelete}
-                  className="px-1.5 py-0.5 rounded flex items-center gap-1"
-                  style={{ background: "oklch(0.55 0.22 25 / 0.2)", color: "oklch(0.75 0.18 25)", fontSize: "0.65rem" }}>
-                  <Trash2 size={9} /> 删除
-                </button>
-              )}
+                style={{ background: "oklch(1 0 0 / 0.06)", color: "oklch(0.50 0.01 260)", fontSize: "0.65rem" }}>
+                清除
+              </button>
+              <button onClick={handleBatchDelete}
+                className="px-1.5 py-0.5 rounded flex items-center gap-1"
+                style={{ background: "oklch(0.55 0.22 25 / 0.2)", color: "oklch(0.75 0.18 25)", fontSize: "0.65rem" }}>
+                <Trash2 size={9} /> 删除
+              </button>
             </div>
           )}
         </div>
@@ -276,12 +377,12 @@ export default function RightPanel() {
         <div className="px-3 py-2 flex gap-2 flex-shrink-0" style={{ borderBottom: "1px solid oklch(1 0 0 / 0.06)" }}>
           <button onClick={() => fileInputRef.current?.click()}
             className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded text-xs transition-all"
-            style={{ background: "oklch(0.58 0.22 264 / 0.15)", border: "1px solid oklch(0.58 0.22 264 / 0.3)", color: "oklch(0.75 0.12 264)", fontFamily: "system-ui" }}>
+            style={{ background: "oklch(0.58 0.22 264 / 0.15)", border: "1px solid oklch(0.58 0.22 264 / 0.3)", color: "oklch(0.75 0.12 264)" }}>
             <Upload size={12} /> 上传照片
           </button>
           <button onClick={autoFill} disabled={emptyCount === 0 || assets.length === 0}
             className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded text-xs transition-all disabled:opacity-35"
-            style={{ background: "oklch(0.62 0.20 45 / 0.15)", border: "1px solid oklch(0.62 0.20 45 / 0.3)", color: "oklch(0.80 0.14 55)", fontFamily: "system-ui" }}>
+            style={{ background: "oklch(0.62 0.20 45 / 0.15)", border: "1px solid oklch(0.62 0.20 45 / 0.3)", color: "oklch(0.80 0.14 55)" }}>
             <Zap size={12} /> 自动填充
           </button>
         </div>
@@ -297,7 +398,7 @@ export default function RightPanel() {
           {currentFolder && (
             <>
               <ChevronRight size={10} style={{ color: "oklch(0.38 0.01 260)", flexShrink: 0 }} />
-              <span style={{ color: "oklch(0.72 0.01 260)", fontSize: "0.7rem", fontFamily: "system-ui" }} className="truncate">
+              <span style={{ color: "oklch(0.72 0.01 260)", fontSize: "0.7rem" }} className="truncate">
                 {currentFolder.name}
               </span>
             </>
@@ -335,13 +436,41 @@ export default function RightPanel() {
           </div>
         )}
 
-        {/* 内容区（访达风格混排） */}
+        {/* 提示文字 */}
+        {assets.length > 0 && !currentFolderId && (
+          <div className="px-3 py-1 flex-shrink-0">
+            <span style={{ color: "oklch(0.38 0.01 260)", fontSize: "0.62rem" }}>
+              拖拽框选批量选中 · 拖入文件夹归类
+            </span>
+          </div>
+        )}
+
+        {/* 内容区（访达风格混排 + Win框选） */}
         <div
-          className="flex-1 overflow-y-auto p-2"
+          ref={gridRef}
+          className="flex-1 overflow-y-auto p-2 relative select-none"
+          onMouseDown={handleGridMouseDown}
           onDrop={handleDrop}
           onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
           onDragLeave={() => setIsDragOver(false)}
+          style={{ cursor: rubberBand ? "crosshair" : "default" }}
         >
+          {/* Win 风格蓝色框选矩形 */}
+          {rubberStyle && (
+            <div
+              className="absolute pointer-events-none z-50"
+              style={{
+                left: rubberStyle.left,
+                top: rubberStyle.top,
+                width: rubberStyle.width,
+                height: rubberStyle.height,
+                background: "oklch(0.58 0.22 264 / 0.15)",
+                border: "1.5px solid oklch(0.58 0.22 264 / 0.8)",
+                borderRadius: "2px",
+              }}
+            />
+          )}
+
           {viewItems.length === 0 ? (
             <div
               className="h-full flex flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed min-h-40 transition-all"
@@ -369,13 +498,16 @@ export default function RightPanel() {
                   const folder = item.folder;
                   const count = folder.assetIds.filter((id) => assets.some((a) => a.id === id)).length;
                   const isOver = dragOverFolderId === folder.id;
+                  // 如果有多选素材，拖入文件夹时高亮
+                  const isDropTarget = isOver;
                   return (
                     <div
                       key={folder.id}
+                      data-item="folder"
                       className="relative group rounded-lg p-2 flex flex-col items-center gap-1 cursor-pointer transition-all"
                       style={{
-                        background: isOver ? "oklch(0.65 0.18 145 / 0.12)" : "oklch(0.18 0.015 260)",
-                        border: isOver ? "1.5px dashed oklch(0.65 0.18 145 / 0.7)" : "1.5px solid oklch(1 0 0 / 0.07)",
+                        background: isDropTarget ? "oklch(0.65 0.18 145 / 0.12)" : "oklch(0.18 0.015 260)",
+                        border: isDropTarget ? "1.5px dashed oklch(0.65 0.18 145 / 0.7)" : "1.5px solid oklch(1 0 0 / 0.07)",
                       }}
                       onDoubleClick={() => setCurrentFolderId(folder.id)}
                       onDrop={(e) => handleFolderDrop(e, folder.id)}
@@ -408,7 +540,7 @@ export default function RightPanel() {
                       ) : (
                         <span
                           className="text-center w-full truncate"
-                          style={{ color: "oklch(0.75 0.01 260)", fontSize: "0.68rem", fontFamily: "system-ui" }}
+                          style={{ color: "oklch(0.75 0.01 260)", fontSize: "0.68rem" }}
                           onDoubleClick={(e) => { e.stopPropagation(); startRename(folder); }}
                         >
                           {folder.name}
@@ -434,6 +566,12 @@ export default function RightPanel() {
                 return (
                   <div
                     key={asset.id}
+                    data-item="asset"
+                    data-asset-id={asset.id}
+                    ref={(el) => {
+                      if (el) itemRefs.current.set(asset.id, el);
+                      else itemRefs.current.delete(asset.id);
+                    }}
                     className="relative group rounded-lg overflow-hidden"
                     style={{
                       aspectRatio: "1",
@@ -443,14 +581,29 @@ export default function RightPanel() {
                         : isUsed
                         ? "1.5px solid oklch(0.65 0.18 145 / 0.6)"
                         : "1.5px solid oklch(1 0 0 / 0.07)",
-                      cursor: selectMode ? "pointer" : "grab",
+                      cursor: "grab",
+                      outline: isSelected ? "1px solid oklch(0.58 0.22 264 / 0.5)" : "none",
+                      outlineOffset: "1px",
                     }}
-                    draggable={!selectMode}
+                    draggable
                     onDragStart={(e) => {
                       e.dataTransfer.setData("assetId", asset.id);
                       e.dataTransfer.effectAllowed = "copy";
                     }}
-                    onClick={() => { if (selectMode) toggleSelect(asset.id); }}
+                    onClick={(e) => {
+                      // 单击切换选中（不影响框选）
+                      if (!isDraggingRubber.current) {
+                        if (e.ctrlKey || e.metaKey) {
+                          setSelectedIds((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(asset.id)) next.delete(asset.id); else next.add(asset.id);
+                            return next;
+                          });
+                        } else {
+                          // 单击不框选时不清空（框选已处理）
+                        }
+                      }
+                    }}
                   >
                     <img
                       src={asset.croppedDataUrl ?? asset.dataUrl}
@@ -459,57 +612,54 @@ export default function RightPanel() {
                       draggable={false}
                     />
 
-                    {selectMode && (
+                    {/* 选中高亮覆盖层 */}
+                    {isSelected && (
                       <div
-                        className="absolute inset-0 flex items-center justify-center"
-                        style={{ background: isSelected ? "oklch(0.58 0.22 264 / 0.35)" : "oklch(0.10 0.01 260 / 0.3)" }}
+                        className="absolute inset-0 pointer-events-none"
+                        style={{ background: "oklch(0.58 0.22 264 / 0.25)" }}
                       >
-                        <div
-                          className="w-5 h-5 rounded-full border-2 flex items-center justify-center"
-                          style={{
-                            borderColor: isSelected ? "oklch(0.58 0.22 264)" : "white",
-                            background: isSelected ? "oklch(0.58 0.22 264)" : "transparent",
-                          }}
-                        >
-                          {isSelected && <span style={{ color: "white", fontSize: "10px" }}>✓</span>}
+                        <div className="absolute top-1 left-1 w-4 h-4 rounded-full flex items-center justify-center"
+                          style={{ background: "oklch(0.58 0.22 264)", border: "1.5px solid white" }}>
+                          <span style={{ color: "white", fontSize: "9px", lineHeight: 1 }}>✓</span>
                         </div>
                       </div>
                     )}
 
-                    {!selectMode && (
+                    {/* 悬停操作菜单 */}
+                    {!isSelected && (
                       <div
                         className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150"
                         style={{ background: "oklch(0.10 0.01 260 / 0.85)" }}
                       >
                         <button
-                          onClick={() => handleFillClick(asset.id)}
+                          onClick={(e) => { e.stopPropagation(); handleFillClick(asset.id); }}
                           className="px-2.5 py-1 rounded-md font-medium w-4/5"
-                          style={{ background: selectedSlotId ? "oklch(0.58 0.22 264)" : "oklch(0.58 0.22 264 / 0.7)", color: "oklch(0.98 0.005 260)", fontSize: "0.68rem", fontFamily: "system-ui" }}
+                          style={{ background: selectedSlotId ? "oklch(0.58 0.22 264)" : "oklch(0.58 0.22 264 / 0.7)", color: "oklch(0.98 0.005 260)", fontSize: "0.68rem" }}
                         >
                           {selectedSlotId ? "填入选中框" : "选框后填入"}
                         </button>
                         <button
-                          onClick={() => setCropTarget(asset)}
+                          onClick={(e) => { e.stopPropagation(); setCropTarget(asset); }}
                           className="px-2.5 py-1 rounded-md font-medium w-4/5 flex items-center justify-center gap-1"
-                          style={{ background: asset.cropRect ? "oklch(0.62 0.20 45 / 0.9)" : "oklch(0.62 0.20 45 / 0.7)", color: "oklch(0.98 0.005 260)", fontSize: "0.68rem", fontFamily: "system-ui" }}
+                          style={{ background: asset.cropRect ? "oklch(0.62 0.20 45 / 0.9)" : "oklch(0.62 0.20 45 / 0.7)", color: "oklch(0.98 0.005 260)", fontSize: "0.68rem" }}
                         >
                           <Crop size={10} />
                           {asset.cropRect ? "重新裁剪" : "裁剪图片"}
                         </button>
                         {isUsed && (
                           <button
-                            onClick={() => unfillSlot(usedInSlot!.id)}
+                            onClick={(e) => { e.stopPropagation(); unfillSlot(usedInSlot!.id); }}
                             className="px-2.5 py-1 rounded-md w-4/5"
-                            style={{ background: "oklch(0.62 0.22 25 / 0.85)", color: "oklch(0.98 0 0)", fontSize: "0.68rem", fontFamily: "system-ui" }}
+                            style={{ background: "oklch(0.62 0.22 25 / 0.85)", color: "oklch(0.98 0 0)", fontSize: "0.68rem" }}
                           >
                             移出图框
                           </button>
                         )}
                         {currentFolderId && (
                           <button
-                            onClick={() => removeFromFolder(asset.id)}
+                            onClick={(e) => { e.stopPropagation(); removeFromFolder(asset.id); }}
                             className="px-2.5 py-1 rounded-md w-4/5"
-                            style={{ background: "oklch(0.22 0.015 260)", color: "oklch(0.60 0.01 260)", fontSize: "0.65rem", fontFamily: "system-ui" }}
+                            style={{ background: "oklch(0.22 0.015 260)", color: "oklch(0.60 0.01 260)", fontSize: "0.65rem" }}
                           >
                             移出文件夹
                           </button>
@@ -517,9 +667,10 @@ export default function RightPanel() {
                       </div>
                     )}
 
-                    {!selectMode && (
+                    {/* 删除按钮 */}
+                    {!isSelected && (
                       <button
-                        onClick={() => removeAsset(asset.id)}
+                        onClick={(e) => { e.stopPropagation(); removeAsset(asset.id); }}
                         className="absolute top-1 right-1 w-5 h-5 rounded flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
                         style={{ background: "oklch(0.62 0.22 25 / 0.9)" }}
                       >
@@ -527,13 +678,15 @@ export default function RightPanel() {
                       </button>
                     )}
 
-                    {isUsed && !selectMode && (
+                    {/* 已填标记 */}
+                    {isUsed && !isSelected && (
                       <div className="absolute bottom-1 left-1 pointer-events-none">
                         <CheckCircle2 size={13} style={{ color: "oklch(0.65 0.18 145)" }} />
                       </div>
                     )}
 
-                    {!selectMode && (
+                    {/* 图片信息 */}
+                    {!isSelected && (
                       <div
                         className="absolute bottom-0 left-0 right-0 px-1.5 py-1 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity"
                         style={{ background: "linear-gradient(transparent, oklch(0.10 0.01 260 / 0.9))", color: "oklch(0.85 0.005 260)", fontSize: "0.6rem" }}
