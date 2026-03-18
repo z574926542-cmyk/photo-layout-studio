@@ -1,7 +1,7 @@
 {
   "name": "photo-layout-studio",
   "productName": "奇妙奇遇光影集 - 排版 Studio",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "description": "专业照片排版工具，完全离线运行",
   "main": "electron/main.js",
   "author": "奇妙奇遇",

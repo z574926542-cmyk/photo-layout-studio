@@ -12,16 +12,17 @@ import {
   Lock, Unlock, Trash2, Plus, Save, FolderOpen,
   ChevronDown, ChevronRight, Pencil, Check, X,
   Image, Layers, LayoutTemplate, Bookmark, PackagePlus, Upload, Loader2,
+  ArrowUp, ArrowDown, ChevronsUp, ChevronsDown, Copy,
 } from "lucide-react";
 import type { TemplateIndex } from "@/lib/templateDb";
 import { getThumbnail, loadTemplateDetail } from "@/lib/templateDb";
 import { toast } from "sonner";
 
-type PanelSection = "canvas" | "slot" | "schemes" | "presets" | "templates";
+type PanelSection = "canvas" | "slot" | "layers" | "schemes" | "presets" | "templates";
 
 export default function LeftPanel() {
   const [openSections, setOpenSections] = useState<Set<PanelSection>>(
-    new Set<PanelSection>(["canvas", "slot"])
+    new Set<PanelSection>(["canvas", "slot", "layers"])
   );
 
   const toggleSection = (s: PanelSection) => {
@@ -56,7 +57,7 @@ export default function LeftPanel() {
           className="text-xs mt-0.5"
           style={{ color: "oklch(0.55 0.015 260)", fontFamily: "'JetBrains Mono', monospace" }}
         >
-          排版 Studio v1.0
+          排版 Studio v1.2
         </div>
       </div>
 
@@ -77,6 +78,16 @@ export default function LeftPanel() {
         onToggle={() => toggleSection("slot")}
       />
       {openSections.has("slot") && <SlotSection />}
+
+      {/* 图层管理 */}
+      <SectionHeader
+        icon={<ChevronsUp size={14} />}
+        title="图层管理"
+        open={openSections.has("layers")}
+        onToggle={() => toggleSection("layers")}
+        accent="oklch(0.72 0.16 55)"
+      />
+      {openSections.has("layers") && <LayerPanel />}
 
       {/* 方案管理 */}
       <SectionHeader
@@ -1045,6 +1056,157 @@ function TemplatesSection() {
           模板库自动保存到本地，关闭浏览器或重启电脑后仍然存在
         </div>
       </div>
+    </div>
+  );
+}
+
+// ─── 图层管理区块 ─────────────────────────────────────────────
+function LayerPanel() {
+  const {
+    state: { slots, selectedSlotId, selectedSlotIds },
+    selectSlot,
+    selectSlots,
+    reorderSlot,
+    duplicateSlot,
+  } = useStudio();
+
+  if (slots.length === 0) {
+    return (
+      <div
+        className="px-4 py-4 text-center"
+        style={{ borderBottom: "1px solid oklch(1 0 0 / 0.06)" }}
+      >
+        <div className="text-xs" style={{ color: "oklch(0.45 0.01 260)" }}>
+          画布上还没有图框
+        </div>
+      </div>
+    );
+  }
+
+  // 图层顺序：数组末尾 = 最顶层，反转显示（顶层在上）
+  const reversedSlots = [...slots].reverse();
+
+  return (
+    <div
+      className="px-3 py-3 space-y-1"
+      style={{ borderBottom: "1px solid oklch(1 0 0 / 0.06)" }}
+    >
+      <div className="text-xs mb-2" style={{ color: "oklch(0.50 0.01 260)", fontSize: "0.65rem" }}>
+        顶层在上 · 点击选中 · Shift+点击多选
+      </div>
+      {reversedSlots.map((slot, revIdx) => {
+        const isSelected = slot.id === selectedSlotId;
+        const isMultiSelected = selectedSlotIds.includes(slot.id);
+        const originalIdx = slots.indexOf(slot);
+        const isTop = originalIdx === slots.length - 1;
+        const isBottom = originalIdx === 0;
+        return (
+          <div
+            key={slot.id}
+            className={cn(
+              "flex items-center gap-1.5 px-2 py-1.5 rounded cursor-pointer transition-all",
+              isSelected
+                ? "bg-indigo-500/20 border border-indigo-500/40"
+                : isMultiSelected
+                ? "bg-amber-500/15 border border-amber-500/30"
+                : "hover:bg-white/5 border border-transparent"
+            )}
+            onClick={(e) => {
+              if (e.shiftKey) {
+                const newIds = selectedSlotIds.includes(slot.id)
+                  ? selectedSlotIds.filter((id) => id !== slot.id)
+                  : [...selectedSlotIds, slot.id];
+                selectSlots(newIds);
+                selectSlot(newIds.length === 1 ? newIds[0] : null);
+              } else {
+                selectSlot(slot.id);
+                selectSlots([slot.id]);
+              }
+            }}
+          >
+            {/* 图层序号 */}
+            <div
+              className="w-4 text-center flex-shrink-0"
+              style={{ color: "oklch(0.40 0.01 260)", fontSize: "0.6rem", fontFamily: "monospace" }}
+            >
+              {originalIdx + 1}
+            </div>
+
+            {/* 图层名称 */}
+            <div className="flex-1 min-w-0">
+              <div
+                className="text-xs truncate"
+                style={{
+                  color: isSelected
+                    ? "oklch(0.82 0.12 264)"
+                    : isMultiSelected
+                    ? "oklch(0.82 0.12 55)"
+                    : "oklch(0.72 0.01 260)",
+                }}
+              >
+                {slot.label || `图框 ${originalIdx + 1}`}
+              </div>
+              <div
+                className="text-xs"
+                style={{ color: "oklch(0.42 0.01 260)", fontSize: "0.6rem" }}
+              >
+                {slot.w.toFixed(1)}% × {slot.h.toFixed(1)}%
+                {slot.assetId && (
+                  <span style={{ color: "oklch(0.65 0.18 145)", marginLeft: 4 }}>● 已填充</span>
+                )}
+              </div>
+            </div>
+
+            {/* 操作按钮 */}
+            <div className="flex items-center gap-0.5 flex-shrink-0">
+              <button
+                title="上移一层"
+                disabled={isTop}
+                onClick={(e) => { e.stopPropagation(); reorderSlot(slot.id, "up"); }}
+                className="p-0.5 rounded transition-all disabled:opacity-25"
+                style={{ color: "oklch(0.55 0.01 260)" }}
+              >
+                <ArrowUp size={11} />
+              </button>
+              <button
+                title="下移一层"
+                disabled={isBottom}
+                onClick={(e) => { e.stopPropagation(); reorderSlot(slot.id, "down"); }}
+                className="p-0.5 rounded transition-all disabled:opacity-25"
+                style={{ color: "oklch(0.55 0.01 260)" }}
+              >
+                <ArrowDown size={11} />
+              </button>
+              <button
+                title="置顶"
+                disabled={isTop}
+                onClick={(e) => { e.stopPropagation(); reorderSlot(slot.id, "top"); }}
+                className="p-0.5 rounded transition-all disabled:opacity-25"
+                style={{ color: "oklch(0.55 0.01 260)" }}
+              >
+                <ChevronsUp size={11} />
+              </button>
+              <button
+                title="置底"
+                disabled={isBottom}
+                onClick={(e) => { e.stopPropagation(); reorderSlot(slot.id, "bottom"); }}
+                className="p-0.5 rounded transition-all disabled:opacity-25"
+                style={{ color: "oklch(0.55 0.01 260)" }}
+              >
+                <ChevronsDown size={11} />
+              </button>
+              <button
+                title="复制图框 (Ctrl+D)"
+                onClick={(e) => { e.stopPropagation(); duplicateSlot(slot.id); }}
+                className="p-0.5 rounded transition-all"
+                style={{ color: "oklch(0.55 0.01 260)" }}
+              >
+                <Copy size={11} />
+              </button>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

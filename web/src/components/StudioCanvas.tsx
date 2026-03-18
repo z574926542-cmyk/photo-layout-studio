@@ -1,7 +1,7 @@
 // ============================================================
 // 奇妙奇遇光影集 排版 Studio — 画布交互组件
 // Design: 专业暗夜工作台
-// 功能: 绘制图框、选择、移动、缩放手柄、Contain 渲染
+// 功能: 绘制图框、选择（含多选/框选）、移动、缩放手柄、Contain 渲染
 //       裁剪功能已移至右侧素材库（预处理），画布不含裁剪模式
 // ============================================================
 import React, {
@@ -10,15 +10,13 @@ import React, {
   useState,
   useEffect,
 } from "react";
-// centeredRef tracks whether initial centering has been done for current displayW/H
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { useStudio } from "@/contexts/StudioContext";
 import type { Slot, ResizeHandle } from "@/lib/types";
 import { toPct, clamp, round, createSlot } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 
 interface DragState {
-  type: "draw" | "move" | "resize" | null;
+  type: "draw" | "move" | "resize" | "marquee" | null;
   startX: number;
   startY: number;
   currentX: number;
@@ -26,6 +24,7 @@ interface DragState {
   slotId?: string;
   resizeHandle?: ResizeHandle;
   initialSlot?: Slot;
+  initialSlots?: Slot[]; // 多选移动时记录所有初始位置
 }
 
 const HANDLE_SIZE = 8;
@@ -54,9 +53,10 @@ function getHandleStyle(handle: ResizeHandle): React.CSSProperties {
 
 export default function StudioCanvas() {
   const {
-    state: { canvas, slots, assets, selectedSlotId, mode, zoom },
+    state: { canvas, slots, assets, selectedSlotId, selectedSlotIds, mode, zoom },
     addSlot,
     selectSlot,
+    selectSlots,
     updateSlot,
     fillSlot,
     unfillSlot,
@@ -67,14 +67,12 @@ export default function StudioCanvas() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<DragState>({ type: null, startX: 0, startY: 0, currentX: 0, currentY: 0 });
   const [drawingSlot, setDrawingSlot] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const [marquee, setMarquee] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
 
   // 画布显示尺寸
   const displayW = canvas.width * zoom;
   const displayH = canvas.height * zoom;
-
-  // 画布居中：纯 CSS 方案，外层容器用 flex 居中，内层用 minWidth/minHeight 支撑滚动
-  // 不依赖任何 JS 计算，彻底解决居中问题
 
   // 获取画布相对坐标（百分比）
   const getCanvasPct = useCallback(
@@ -107,10 +105,24 @@ export default function StudioCanvas() {
         setDrawingSlot({ x, y, w: 0, h: 0 });
         setIsDragging(true);
       } else {
-        selectSlot(null);
+        // 框选模式
+        e.preventDefault();
+        dragRef.current = {
+          type: "marquee",
+          startX: x,
+          startY: y,
+          currentX: x,
+          currentY: y,
+        };
+        setMarquee({ x, y, w: 0, h: 0 });
+        setIsDragging(true);
+        if (!e.shiftKey) {
+          selectSlot(null);
+          selectSlots([]);
+        }
       }
     },
-    [mode, getCanvasPct, selectSlot]
+    [mode, getCanvasPct, selectSlot, selectSlots]
   );
 
   // ─── 图框鼠标按下（选择/移动） ────────────────────────────
@@ -118,10 +130,28 @@ export default function StudioCanvas() {
     (e: React.MouseEvent, slot: Slot) => {
       if (e.button !== 0) return;
       e.stopPropagation();
+
+      if (e.shiftKey) {
+        // Shift+点击：切换多选
+        const newIds = selectedSlotIds.includes(slot.id)
+          ? selectedSlotIds.filter((id) => id !== slot.id)
+          : [...selectedSlotIds, slot.id];
+        selectSlots(newIds);
+        selectSlot(newIds.length === 1 ? newIds[0] : null);
+        return;
+      }
+
+      // 普通点击
+      if (!selectedSlotIds.includes(slot.id)) {
+        selectSlots([slot.id]);
+      }
       selectSlot(slot.id);
 
       if (mode === "select") {
         const { x, y } = getCanvasPct(e.clientX, e.clientY);
+        const idsToMove = selectedSlotIds.includes(slot.id) && selectedSlotIds.length > 1
+          ? selectedSlotIds
+          : [slot.id];
         dragRef.current = {
           type: "move",
           startX: x,
@@ -130,11 +160,12 @@ export default function StudioCanvas() {
           currentY: y,
           slotId: slot.id,
           initialSlot: { ...slot },
+          initialSlots: slots.filter((s) => idsToMove.includes(s.id)).map((s) => ({ ...s })),
         };
         setIsDragging(true);
       }
     },
-    [mode, getCanvasPct, selectSlot]
+    [mode, getCanvasPct, selectSlot, selectSlots, selectedSlotIds, slots]
   );
 
   // ─── 缩放手柄鼠标按下 ─────────────────────────────────────
@@ -158,7 +189,7 @@ export default function StudioCanvas() {
     [getCanvasPct]
   );
 
-  // ─── 鼠标移动（绘制/移动/缩放） ──────────────────────────
+  // ─── 鼠标移动（绘制/移动/缩放/框选） ──────────────────────
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (!isDragging) return;
@@ -173,16 +204,28 @@ export default function StudioCanvas() {
         const sw = Math.abs(x - drag.startX);
         const sh = Math.abs(y - drag.startY);
         setDrawingSlot({ x: sx, y: sy, w: sw, h: sh });
+      } else if (drag.type === "marquee") {
+        const sx = Math.min(drag.startX, x);
+        const sy = Math.min(drag.startY, y);
+        const sw = Math.abs(x - drag.startX);
+        const sh = Math.abs(y - drag.startY);
+        setMarquee({ x: sx, y: sy, w: sw, h: sh });
       } else if (drag.type === "move" && drag.slotId && drag.initialSlot) {
         const dx = x - drag.startX;
         const dy = y - drag.startY;
-        const init = drag.initialSlot;
-        const newX = clamp(init.x + dx, 0, 100 - init.w);
-        const newY = clamp(init.y + dy, 0, 100 - init.h);
-        updateSlot(drag.slotId, {
-          x: round(newX, 2),
-          y: round(newY, 2),
-        });
+        // 多选移动
+        if (drag.initialSlots && drag.initialSlots.length > 1) {
+          drag.initialSlots.forEach((init) => {
+            const newX = clamp(init.x + dx, 0, 100 - init.w);
+            const newY = clamp(init.y + dy, 0, 100 - init.h);
+            updateSlot(init.id, { x: round(newX, 2), y: round(newY, 2) });
+          });
+        } else {
+          const init = drag.initialSlot;
+          const newX = clamp(init.x + dx, 0, 100 - init.w);
+          const newY = clamp(init.y + dy, 0, 100 - init.h);
+          updateSlot(drag.slotId, { x: round(newX, 2), y: round(newY, 2) });
+        }
       } else if (drag.type === "resize" && drag.slotId && drag.initialSlot && drag.resizeHandle) {
         const dx = x - drag.startX;
         const dy = y - drag.startY;
@@ -217,7 +260,7 @@ export default function StudioCanvas() {
       }
     };
 
-    const handleMouseUp = () => {
+    const handleMouseUp = (e: MouseEvent) => {
       if (!isDragging) return;
       const drag = dragRef.current;
 
@@ -231,8 +274,32 @@ export default function StudioCanvas() {
           );
           addSlot(slot);
           selectSlot(slot.id);
+          selectSlots([slot.id]);
         }
         setDrawingSlot(null);
+      } else if (drag.type === "marquee" && marquee) {
+        // 框选：找出与框选区域相交的图框
+        if (marquee.w > 0.5 && marquee.h > 0.5) {
+          const hit = slots.filter((s) => {
+            return (
+              s.x < marquee.x + marquee.w &&
+              s.x + s.w > marquee.x &&
+              s.y < marquee.y + marquee.h &&
+              s.y + s.h > marquee.y
+            );
+          });
+          const hitIds = hit.map((s) => s.id);
+          if (e.shiftKey) {
+            // Shift 框选：追加到现有选中
+            const merged = Array.from(new Set([...selectedSlotIds, ...hitIds]));
+            selectSlots(merged);
+            selectSlot(merged.length === 1 ? merged[0] : null);
+          } else {
+            selectSlots(hitIds);
+            selectSlot(hitIds.length === 1 ? hitIds[0] : null);
+          }
+        }
+        setMarquee(null);
       }
 
       dragRef.current = { type: null, startX: 0, startY: 0, currentX: 0, currentY: 0 };
@@ -245,7 +312,7 @@ export default function StudioCanvas() {
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
     };
-  }, [isDragging, drawingSlot, addSlot, selectSlot, updateSlot, getCanvasPct]);
+  }, [isDragging, drawingSlot, marquee, addSlot, selectSlot, selectSlots, updateSlot, getCanvasPct, slots, selectedSlotIds]);
 
   // 处理素材拖放到图框
   const handleSlotDrop = useCallback(
@@ -341,6 +408,7 @@ export default function StudioCanvas() {
             slot={slot}
             asset={assets.find((a) => a.id === slot.assetId) ?? null}
             isSelected={slot.id === selectedSlotId}
+            isMultiSelected={selectedSlotIds.includes(slot.id)}
             zoom={zoom}
             onMouseDown={handleSlotMouseDown}
             onResizeMouseDown={handleResizeMouseDown}
@@ -365,6 +433,21 @@ export default function StudioCanvas() {
             }}
           />
         )}
+
+        {/* 框选预览 */}
+        {marquee && marquee.w > 0.5 && marquee.h > 0.5 && (
+          <div
+            className="absolute pointer-events-none z-50"
+            style={{
+              left: `${marquee.x}%`,
+              top: `${marquee.y}%`,
+              width: `${marquee.w}%`,
+              height: `${marquee.h}%`,
+              border: "1.5px dashed oklch(0.58 0.22 264 / 0.9)",
+              backgroundColor: "oklch(0.58 0.22 264 / 0.06)",
+            }}
+          />
+        )}
       </div>
       </div>
     </div>
@@ -376,6 +459,7 @@ interface SlotRendererProps {
   slot: Slot;
   asset: import("@/lib/types").Asset | null;
   isSelected: boolean;
+  isMultiSelected: boolean;
   zoom: number;
   onMouseDown: (e: React.MouseEvent, slot: Slot) => void;
   onResizeMouseDown: (e: React.MouseEvent, slot: Slot, handle: ResizeHandle) => void;
@@ -387,6 +471,7 @@ function SlotRenderer({
   slot,
   asset,
   isSelected,
+  isMultiSelected,
   zoom,
   onMouseDown,
   onResizeMouseDown,
@@ -401,7 +486,7 @@ function SlotRenderer({
       data-slot
       className={cn(
         "absolute group",
-        isSelected ? "z-20" : "z-10"
+        isSelected ? "z-20" : isMultiSelected ? "z-15" : "z-10"
       )}
       style={{
         left: `${slot.x}%`,
@@ -410,11 +495,15 @@ function SlotRenderer({
         height: `${slot.h}%`,
         outline: isSelected
           ? "2px solid oklch(0.58 0.22 264)"
+          : isMultiSelected
+          ? "2px solid oklch(0.72 0.16 55)"
           : hasFill
           ? "none"
           : "1.5px dashed oklch(0.58 0.22 264 / 0.55)",
         boxShadow: isSelected
           ? "0 0 0 2px oklch(0.58 0.22 264), 0 0 20px oklch(0.58 0.22 264 / 0.3)"
+          : isMultiSelected
+          ? "0 0 0 1px oklch(0.72 0.16 55 / 0.5)"
           : "none",
         cursor: "move",
         overflow: "hidden",
@@ -428,7 +517,7 @@ function SlotRenderer({
       {asset && (
         <div className="absolute inset-0 overflow-hidden">
           <AspectFillImage asset={asset} slot={slot} />
-          {/* 删除当前图片按鈕：悬停时显示，点击清空图框 */}
+          {/* 删除当前图片按钮：悬停时显示，点击清空图框 */}
           <button
             className="absolute top-1 right-1 w-5 h-5 rounded flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-40"
             style={{ background: "oklch(0.62 0.22 25 / 0.92)", border: "1px solid oklch(1 0 0 / 0.2)" }}

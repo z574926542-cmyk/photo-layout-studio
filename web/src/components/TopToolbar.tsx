@@ -2,6 +2,7 @@
 // 奇妙奇遇光影集 排版 Studio — 顶部工具栏
 // Design: 专业暗夜工作台
 // 功能: 模式切换、撤销/重做、缩放控制、新建、导出
+//       对齐工具（多选时显示）、复制图框
 // ============================================================
 import React, { useState } from "react";
 import appLogo from "@/assets/app-logo.png";
@@ -10,7 +11,10 @@ import { cn } from "@/lib/utils";
 import {
   MousePointer2, Square, Undo2, Redo2, Trash2,
   ZoomIn, ZoomOut, Download, Loader2, Zap,
-  FilePlus, X, Check, Layers,
+  FilePlus, X, Check, Layers, Copy,
+  AlignLeft, AlignCenter, AlignRight,
+  AlignStartVertical, AlignCenterVertical, AlignEndVertical,
+  AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter,
 } from "lucide-react";
 
 export default function TopToolbar() {
@@ -27,6 +31,10 @@ export default function TopToolbar() {
     newCanvas,
     canUndo,
     canRedo,
+    selectedSlot,
+    selectedSlotIds,
+    duplicateSlot,
+    alignSlots,
   } = useStudio();
   const { mode, zoom, canvas, isExporting, slots } = state;
   const [showNewCanvas, setShowNewCanvas] = useState(false);
@@ -55,6 +63,10 @@ export default function TopToolbar() {
       setShowNewCanvas(false);
     }
   };
+
+  // 对齐工具：当多选 ≥2 个图框时显示
+  const hasMultiSelect = selectedSlotIds.length >= 2;
+  const hasSingleSelect = !!selectedSlot;
 
   return (
     <>
@@ -144,6 +156,105 @@ export default function TopToolbar() {
           <Trash2 size={15} />
         </ToolButton>
 
+        {/* 复制图框（有选中时显示） */}
+        {hasSingleSelect && (
+          <>
+            <Divider />
+            <ToolButton
+              onClick={() => selectedSlot && duplicateSlot(selectedSlot.id)}
+              title="复制选中图框 (Ctrl+D)"
+            >
+              <Copy size={15} />
+            </ToolButton>
+          </>
+        )}
+
+        {/* 对齐工具（多选 ≥2 时显示） */}
+        {hasMultiSelect && (
+          <>
+            <Divider />
+            <div className="flex items-center gap-0.5">
+              <ToolButton
+                onClick={() => alignSlots(selectedSlotIds, "left", "selection")}
+                title="左对齐（相对选中区域）"
+              >
+                <AlignLeft size={14} />
+              </ToolButton>
+              <ToolButton
+                onClick={() => alignSlots(selectedSlotIds, "centerH", "selection")}
+                title="水平居中（相对选中区域）"
+              >
+                <AlignCenter size={14} />
+              </ToolButton>
+              <ToolButton
+                onClick={() => alignSlots(selectedSlotIds, "right", "selection")}
+                title="右对齐（相对选中区域）"
+              >
+                <AlignRight size={14} />
+              </ToolButton>
+              <ToolButton
+                onClick={() => alignSlots(selectedSlotIds, "top", "selection")}
+                title="顶对齐（相对选中区域）"
+              >
+                <AlignStartVertical size={14} />
+              </ToolButton>
+              <ToolButton
+                onClick={() => alignSlots(selectedSlotIds, "centerV", "selection")}
+                title="垂直居中（相对选中区域）"
+              >
+                <AlignCenterVertical size={14} />
+              </ToolButton>
+              <ToolButton
+                onClick={() => alignSlots(selectedSlotIds, "bottom", "selection")}
+                title="底对齐（相对选中区域）"
+              >
+                <AlignEndVertical size={14} />
+              </ToolButton>
+              {selectedSlotIds.length >= 3 && (
+                <>
+                  <ToolButton
+                    onClick={() => alignSlots(selectedSlotIds, "distributeH", "selection")}
+                    title="水平均匀分布"
+                  >
+                    <AlignHorizontalDistributeCenter size={14} />
+                  </ToolButton>
+                  <ToolButton
+                    onClick={() => alignSlots(selectedSlotIds, "distributeV", "selection")}
+                    title="垂直均匀分布"
+                  >
+                    <AlignVerticalDistributeCenter size={14} />
+                  </ToolButton>
+                </>
+              )}
+            </div>
+
+            {/* 对齐到画布 */}
+            <div className="flex items-center gap-0.5 ml-0.5">
+              <ToolButton
+                onClick={() => alignSlots(selectedSlotIds, "left", "canvas")}
+                title="左对齐画布"
+                className="opacity-60 hover:opacity-100"
+              >
+                <AlignLeft size={12} />
+              </ToolButton>
+              <ToolButton
+                onClick={() => alignSlots(selectedSlotIds, "centerH", "canvas")}
+                title="水平居中画布"
+                className="opacity-60 hover:opacity-100"
+              >
+                <AlignCenter size={12} />
+              </ToolButton>
+              <ToolButton
+                onClick={() => alignSlots(selectedSlotIds, "right", "canvas")}
+                title="右对齐画布"
+                className="opacity-60 hover:opacity-100"
+              >
+                <AlignRight size={12} />
+              </ToolButton>
+            </div>
+          </>
+        )}
+
         <Divider />
 
         {/* 缩放控制 */}
@@ -183,6 +294,22 @@ export default function TopToolbar() {
         </div>
 
         <div className="flex-1" />
+
+        {/* 多选状态提示 */}
+        {hasMultiSelect && (
+          <div
+            className="text-xs flex-shrink-0 mr-2 px-2 py-0.5 rounded"
+            style={{
+              color: "oklch(0.82 0.12 55)",
+              background: "oklch(0.72 0.16 55 / 0.12)",
+              border: "1px solid oklch(0.72 0.16 55 / 0.25)",
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: "0.7rem",
+            }}
+          >
+            已选 {selectedSlotIds.length} 框
+          </div>
+        )}
 
         {/* 图框数量 */}
         <div
@@ -394,28 +521,6 @@ function ToolButton({
       } : undefined}
     >
       {children}
-    </button>
-  );
-}
-
-//// ─── 模板工坊导航按鈕（已移除，路由不存在）────────────────
-// WorkshopNavButton removed - no /workshop route
-// Placeholder to avoid breaking changes
-function _WorkshopNavButton_unused() {
-  return (
-    <button
-      onClick={() => {}}
-      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-medium transition-all flex-shrink-0"
-      style={{
-        background: "oklch(0.65 0.18 145 / 0.12)",
-        border: "1px solid oklch(0.65 0.18 145 / 0.3)",
-        color: "oklch(0.75 0.14 145)",
-        fontFamily: "'Space Grotesk', sans-serif",
-      }}
-      title="模板工坊：可视化制作和分享模板"
-    >
-      <Layers size={13} />
-      模板工坊
     </button>
   );
 }

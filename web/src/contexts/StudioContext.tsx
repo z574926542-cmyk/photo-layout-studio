@@ -50,6 +50,7 @@ interface StudioState {
   slots: Slot[];
   assets: Asset[];
   selectedSlotId: string | null;
+  selectedSlotIds: string[]; // 多选图框 ID 列表
   mode: EditorMode;
   zoom: number; // 0.2 ~ 4.0
   schemes: LayoutScheme[];
@@ -92,7 +93,11 @@ type Action =
   | { type: "LOAD_PRESET"; presetId: string }
   | { type: "NEW_CANVAS"; width: number; height: number }
   | { type: "SET_BG_IMAGE"; dataUrl: string; width: number; height: number }
-  | { type: "CLEAR_BG_IMAGE" };
+  | { type: "CLEAR_BG_IMAGE" }
+  | { type: "REORDER_SLOT"; id: string; direction: "up" | "down" | "top" | "bottom" }
+  | { type: "DUPLICATE_SLOT"; id: string }
+  | { type: "ALIGN_SLOTS"; ids: string[]; align: "left" | "centerH" | "right" | "top" | "centerV" | "bottom" | "distributeH" | "distributeV"; relativeTo: "selection" | "canvas" }
+  | { type: "SELECT_SLOTS"; ids: string[] };
 
 // ─── Initial State ────────────────────────────────────────
 const DEFAULT_CANVAS: CanvasConfig = {
@@ -133,6 +138,7 @@ const initialState: StudioState = {
   slots: [],
   assets: [],
   selectedSlotId: null,
+  selectedSlotIds: [],
   mode: "select",
   zoom: calcInitialZoom(),
   schemes: loadSchemes(),
@@ -436,11 +442,96 @@ function reducer(state: StudioState, action: Action): StudioState {
       };
     }
 
-    case "CLEAR_BG_IMAGE": {
+     case "CLEAR_BG_IMAGE": {
       const newCanvas = { ...state.canvas, backgroundImage: null };
       return { ...state, canvas: newCanvas };
     }
-
+    // ─── 图层顺序调整 ───────────────────────────────────────────────
+    case "REORDER_SLOT": {
+      const idx = state.slots.findIndex((s) => s.id === action.id);
+      if (idx === -1) return state;
+      const slots = [...state.slots];
+      if (action.direction === "up" && idx < slots.length - 1) {
+        [slots[idx], slots[idx + 1]] = [slots[idx + 1], slots[idx]];
+      } else if (action.direction === "down" && idx > 0) {
+        [slots[idx], slots[idx - 1]] = [slots[idx - 1], slots[idx]];
+      } else if (action.direction === "top") {
+        const [item] = slots.splice(idx, 1);
+        slots.push(item);
+      } else if (action.direction === "bottom") {
+        const [item] = slots.splice(idx, 1);
+        slots.unshift(item);
+      }
+      return pushHistory({ ...state, slots });
+    }
+    // ─── 复制图框 ─────────────────────────────────────────────────────
+    case "DUPLICATE_SLOT": {
+      const src = state.slots.find((s) => s.id === action.id);
+      if (!src) return state;
+      const newSlot: Slot = {
+        ...src,
+        id: genId(),
+        assetId: null, // 复制图框不复制图片
+        x: Math.min(src.x + 2, 100 - src.w),
+        y: Math.min(src.y + 2, 100 - src.h),
+      };
+      return pushHistory({ ...state, slots: [...state.slots, newSlot], selectedSlotId: newSlot.id });
+    }
+    // ─── 对齐工具 ─────────────────────────────────────────────────────
+    case "ALIGN_SLOTS": {
+      const targets = state.slots.filter((s) => action.ids.includes(s.id));
+      if (targets.length < 1) return state;
+      const canvas = state.canvas;
+      // 计算选中图框的边界盒
+      const minX = Math.min(...targets.map((s) => s.x));
+      const maxX = Math.max(...targets.map((s) => s.x + s.w));
+      const minY = Math.min(...targets.map((s) => s.y));
+      const maxY = Math.max(...targets.map((s) => s.y + s.h));
+      const selW = maxX - minX;
+      const selH = maxY - minY;
+      // 参考尺寸：相对于选中区域或画布
+      const refLeft = action.relativeTo === "canvas" ? 0 : minX;
+      const refRight = action.relativeTo === "canvas" ? 100 : maxX;
+      const refTop = action.relativeTo === "canvas" ? 0 : minY;
+      const refBottom = action.relativeTo === "canvas" ? 100 : maxY;
+      const refW = refRight - refLeft;
+      const refH = refBottom - refTop;
+      const updatedSlots = state.slots.map((s) => {
+        if (!action.ids.includes(s.id)) return s;
+        switch (action.align) {
+          case "left": return { ...s, x: refLeft };
+          case "right": return { ...s, x: refRight - s.w };
+          case "centerH": return { ...s, x: refLeft + (refW - s.w) / 2 };
+          case "top": return { ...s, y: refTop };
+          case "bottom": return { ...s, y: refBottom - s.h };
+          case "centerV": return { ...s, y: refTop + (refH - s.h) / 2 };
+          case "distributeH": {
+            // 按 x 排序后等间距分布
+            const sorted = [...targets].sort((a, b) => a.x - b.x);
+            const totalW = sorted.reduce((acc, t) => acc + t.w, 0);
+            const gap = (selW - totalW) / Math.max(sorted.length - 1, 1);
+            let curX = minX;
+            const xMap: Record<string, number> = {};
+            sorted.forEach((t) => { xMap[t.id] = curX; curX += t.w + gap; });
+            return { ...s, x: xMap[s.id] ?? s.x };
+          }
+          case "distributeV": {
+            const sorted = [...targets].sort((a, b) => a.y - b.y);
+            const totalH = sorted.reduce((acc, t) => acc + t.h, 0);
+            const gap = (selH - totalH) / Math.max(sorted.length - 1, 1);
+            let curY = minY;
+            const yMap: Record<string, number> = {};
+            sorted.forEach((t) => { yMap[t.id] = curY; curY += t.h + gap; });
+            return { ...s, y: yMap[s.id] ?? s.y };
+          }
+          default: return s;
+        }
+      });
+      return pushHistory({ ...state, slots: updatedSlots });
+    }
+    // ─── 多选 ───────────────────────────────────────────────────────────
+    case "SELECT_SLOTS":
+      return { ...state, selectedSlotIds: action.ids };
     default:
       return state;
   }
@@ -509,6 +600,15 @@ interface StudioContextValue {
   canUndo: boolean;
   canRedo: boolean;
   selectedSlot: Slot | null;
+  selectedSlotIds: string[];
+  // 图层顺序
+  reorderSlot: (id: string, direction: "up" | "down" | "top" | "bottom") => void;
+  // 复制图框
+  duplicateSlot: (id: string) => void;
+  // 对齐
+  alignSlots: (ids: string[], align: "left" | "centerH" | "right" | "top" | "centerV" | "bottom" | "distributeH" | "distributeV", relativeTo: "selection" | "canvas") => void;
+  // 多选
+  selectSlots: (ids: string[]) => void;
 }
 
 const StudioContext = createContext<StudioContextValue | null>(null);
@@ -537,6 +637,21 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   const setMode = useCallback((mode: EditorMode) => dispatch({ type: "SET_MODE", mode }), []);
   const setZoom = useCallback((zoom: number) => dispatch({ type: "SET_ZOOM", zoom }), []);
   const selectSlot = useCallback((id: string | null) => dispatch({ type: "SELECT_SLOT", id }), []);
+  const selectSlots = useCallback((ids: string[]) => dispatch({ type: "SELECT_SLOTS", ids }), []);
+  const reorderSlot = useCallback((id: string, direction: "up" | "down" | "top" | "bottom") => {
+    dispatch({ type: "REORDER_SLOT", id, direction });
+  }, []);
+  const duplicateSlot = useCallback((id: string) => {
+    dispatch({ type: "DUPLICATE_SLOT", id });
+    toast.success("图框已复制");
+  }, []);
+  const alignSlots = useCallback((
+    ids: string[],
+    align: "left" | "centerH" | "right" | "top" | "centerV" | "bottom" | "distributeH" | "distributeV",
+    relativeTo: "selection" | "canvas"
+  ) => {
+    dispatch({ type: "ALIGN_SLOTS", ids, align, relativeTo });
+  }, []);
   const addSlot = useCallback((slot: Slot) => dispatch({ type: "ADD_SLOT", slot }), []);
   const clearSlots = useCallback(() => dispatch({ type: "CLEAR_SLOTS" }), []);
   const undo = useCallback(() => dispatch({ type: "UNDO" }), []);
@@ -789,6 +904,12 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       ) {
         e.preventDefault();
         dispatch({ type: "REDO" });
+      } else if ((e.metaKey || e.ctrlKey) && e.key === "d") {
+        if (state.selectedSlotId) {
+          e.preventDefault();
+          dispatch({ type: "DUPLICATE_SLOT", id: state.selectedSlotId });
+          toast.success("图框已复制");
+        }
       } else if (e.key === "Delete" || e.key === "Backspace") {
         if (state.selectedSlotId) {
           e.preventDefault();
@@ -849,6 +970,11 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     canUndo,
     canRedo,
     selectedSlot,
+    selectedSlotIds: state.selectedSlotIds,
+    reorderSlot,
+    duplicateSlot,
+    alignSlots,
+    selectSlots,
   };
 
   return (
