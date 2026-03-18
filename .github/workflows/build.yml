@@ -36,15 +36,18 @@ jobs:
           pnpm build
 
       - name: Build macOS DMG
-        run: npx electron-builder --mac
+        run: npx electron-builder --mac --arm64
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DEBUG: electron-builder
 
       - name: Upload macOS DMG
         uses: actions/upload-artifact@v4
         with:
           name: macos-dmg
-          path: release/*.dmg
+          path: |
+            release/*.dmg
+            release/*.zip
           if-no-files-found: error
 
   build-windows:
