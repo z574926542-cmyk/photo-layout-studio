@@ -15,12 +15,14 @@ const os = require('os');
 const DATA_DIR = path.join(app.getPath('userData'), 'data');
 const ASSETS_DIR = path.join(DATA_DIR, 'assets');   // 素材图片（base64 存储）
 const PROJECTS_DIR = path.join(DATA_DIR, 'projects'); // 项目文件
+const TEMPLATES_DIR = path.join(DATA_DIR, 'templates'); // 模板库
 const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
 const STATE_FILE = path.join(DATA_DIR, 'last-state.json'); // 上次工作状态
+const TEMPLATE_INDEX_FILE = path.join(DATA_DIR, 'templates', '_index.json');
 
 // 确保数据目录存在
 function ensureDirs() {
-  [DATA_DIR, ASSETS_DIR, PROJECTS_DIR].forEach(dir => {
+  [DATA_DIR, ASSETS_DIR, PROJECTS_DIR, TEMPLATES_DIR].forEach(dir => {
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   });
 }
@@ -287,7 +289,68 @@ ipcMain.handle('export-png', async (event, { dataUrl, defaultName }) => {
 
 // 获取数据目录路径
 ipcMain.handle('get-data-dir', async () => {
-  return { dataDir: DATA_DIR, assetsDir: ASSETS_DIR, projectsDir: PROJECTS_DIR };
+  return { dataDir: DATA_DIR, assetsDir: ASSETS_DIR, projectsDir: PROJECTS_DIR, templatesDir: TEMPLATES_DIR };
+});
+
+// ─── 模板库文件系统操作 ───────────────────────────────────────
+
+// 读取模板索引
+ipcMain.handle('template-load-index', async () => {
+  try {
+    if (fs.existsSync(TEMPLATE_INDEX_FILE)) {
+      const data = fs.readFileSync(TEMPLATE_INDEX_FILE, 'utf-8');
+      return { success: true, data: JSON.parse(data) };
+    }
+    return { success: true, data: [] };
+  } catch (e) {
+    return { success: false, error: e.message, data: [] };
+  }
+});
+
+// 保存模板索引
+ipcMain.handle('template-save-index', async (event, indexJson) => {
+  try {
+    fs.writeFileSync(TEMPLATE_INDEX_FILE, indexJson, 'utf-8');
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
+
+// 读取单个模板详情
+ipcMain.handle('template-load-detail', async (event, id) => {
+  try {
+    const filePath = path.join(TEMPLATES_DIR, `${id}.json`);
+    if (fs.existsSync(filePath)) {
+      const data = fs.readFileSync(filePath, 'utf-8');
+      return { success: true, data: JSON.parse(data) };
+    }
+    return { success: false, error: 'not found' };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
+
+// 保存单个模板详情
+ipcMain.handle('template-save-detail', async (event, { id, template }) => {
+  try {
+    const filePath = path.join(TEMPLATES_DIR, `${id}.json`);
+    fs.writeFileSync(filePath, JSON.stringify(template), 'utf-8');
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
+
+// 删除单个模板
+ipcMain.handle('template-delete', async (event, id) => {
+  try {
+    const filePath = path.join(TEMPLATES_DIR, `${id}.json`);
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
 });
 
 // ─── 应用生命周期 ─────────────────────────────────────────────

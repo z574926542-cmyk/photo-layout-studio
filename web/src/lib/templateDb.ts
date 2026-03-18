@@ -1,18 +1,25 @@
 /**
- * templateDb.ts — IndexedDB 分层存储
+ * templateDb.ts — 双模式存储层
  *
- * 架构：
- *   localStorage["tpl-index"]  → TemplateIndex[]（极小，启动时全量读取）
- *   IndexedDB["templates"]     → TemplateDetail（含底图 Base64，按需读取）
- *   IndexedDB["thumbnails"]    → ThumbnailCache（持久化缩略图，按需生成一次）
+ * Electron 环境：使用文件系统（通过 IPC）
+ *   - 索引: userData/data/templates/_index.json
+ *   - 详情: userData/data/templates/{id}.json
  *
- * 性能目标：
- *   - 1000 个模板启动耗时 < 100ms（只读索引）
- *   - 滚动始终 60fps（虚拟滚动 + 懒加载缩略图）
- *   - 内存占用恒定（只有可见缩略图在内存）
+ * 浏览器环境：使用 IndexedDB（降级）
+ *   - 索引: localStorage["tpl-index-v2"]
+ *   - 详情: IndexedDB["templates"]
+ *   - 缩略图: IndexedDB["thumbnails"]
  */
 
 import type { LayoutTemplate } from './types';
+import {
+  isElectron,
+  electronTemplateLoadIndex,
+  electronTemplateSaveIndex,
+  electronTemplateLoadDetail,
+  electronTemplateSaveDetail,
+  electronTemplateDelete,
+} from './electronBridge';
 
 // ─── 类型定义 ──────────────────────────────────────────────
 
@@ -121,25 +128,49 @@ export function loadTemplateIndex(): TemplateIndex[] {
   }
 }
 
-function saveTemplateIndex(index: TemplateIndex[]): void {
-  localStorage.setItem(INDEX_KEY, JSON.stringify(index));
+/** 异步读取索引（Electron 从文件读，浏览器从 localStorage 读） */
+export async function loadTemplateIndexAsync(): Promise<TemplateIndex[]> {
+  if (isElectron) {
+    const data = await electronTemplateLoadIndex();
+    // 同时更新 localStorage 缓存，供同步调用使用
+    try { localStorage.setItem(INDEX_KEY, JSON.stringify(data)); } catch {}
+    return (data as TemplateIndex[]).sort((a, b) => b.importedAt - a.importedAt);
+  }
+  return loadTemplateIndex();
 }
 
-// ─── 详情层（IndexedDB） ───────────────────────────────────
+function saveTemplateIndex(index: TemplateIndex[]): void {
+  try { localStorage.setItem(INDEX_KEY, JSON.stringify(index)); } catch {}
+}
+
+async function saveTemplateIndexAsync(index: TemplateIndex[]): Promise<void> {
+  saveTemplateIndex(index);
+  if (isElectron) {
+    await electronTemplateSaveIndex(index);
+  }
+}
+
+// ─── 详情层 ─────────────────────────────────────────────────────
 
 export async function loadTemplateDetail(id: string): Promise<LayoutTemplate | undefined> {
+  if (isElectron) {
+    const data = await electronTemplateLoadDetail(id);
+    return data as LayoutTemplate | undefined;
+  }
   const detail = await idbGet<TemplateDetail>(STORE_TEMPLATES, id);
   return detail?.template;
 }
 
-// ─── 缩略图层（IndexedDB） ────────────────────────────────
+// ─── 缩略图层（仅浏览器 IndexedDB 缓存） ────────────────────────────
 
 export async function loadThumbnail(id: string): Promise<string | undefined> {
+  if (isElectron) return undefined; // Electron 不用 IndexedDB 缓存
   const cache = await idbGet<ThumbnailCache>(STORE_THUMBNAILS, id);
   return cache?.dataUrl;
 }
 
 async function saveThumbnail(id: string, dataUrl: string): Promise<void> {
+  if (isElectron) return;
   await idbPut(STORE_THUMBNAILS, { id, dataUrl, generatedAt: Date.now() });
 }
 
@@ -173,11 +204,13 @@ export async function getThumbnail(
   id: string,
   template: LayoutTemplate
 ): Promise<string> {
-  // 1. 先查 IndexedDB 缓存
-  const cached = await loadThumbnail(id);
-  if (cached) return cached;
+  // 浏览器环境先查 IndexedDB 缓存
+  if (!isElectron) {
+    const cached = await loadThumbnail(id);
+    if (cached) return cached;
+  }
 
-  // 2. 缓存不存在，生成缩略图
+  // 生成缩略图
   const THUMB_W = 240;
   const THUMB_H = Math.round(THUMB_W * (template.canvas.height / template.canvas.width));
   const canvas = document.createElement('canvas');
@@ -207,18 +240,20 @@ export async function getThumbnail(
   drawSlotOutlines(ctx, template, THUMB_W, THUMB_H);
   const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
 
-  // 3. 持久化到 IndexedDB（不阻塞返回）
-  saveThumbnail(id, dataUrl).catch(console.warn);
+  // 浏览器环境持久化到 IndexedDB
+  if (!isElectron) {
+    saveThumbnail(id, dataUrl).catch(console.warn);
+  }
 
   return dataUrl;
 }
 
 // ─── 公共 CRUD API ─────────────────────────────────────────
 
-/** 保存模板到库（索引写 localStorage，详情写 IndexedDB，清除旧缩略图缓存） */
+/** 保存模板到库 */
 export async function saveTemplate(template: LayoutTemplate): Promise<TemplateIndex> {
   const { nanoid } = await import('nanoid');
-  const index = loadTemplateIndex();
+  const index = await loadTemplateIndexAsync();
 
   const existingIdx = index.findIndex(
     (s) => s.name === template.name && s.author === template.author
@@ -237,35 +272,44 @@ export async function saveTemplate(template: LayoutTemplate): Promise<TemplateIn
 
   if (existingIdx >= 0) {
     index[existingIdx] = entry;
-    // 清除旧缩略图缓存，下次滚到时重新生成
-    idbDelete(STORE_THUMBNAILS, id).catch(console.warn);
+    if (!isElectron) idbDelete(STORE_THUMBNAILS, id).catch(console.warn);
   } else {
     index.unshift(entry);
   }
 
-  saveTemplateIndex(index);
-  await idbPut(STORE_TEMPLATES, { id, template } as TemplateDetail);
+  await saveTemplateIndexAsync(index);
+
+  if (isElectron) {
+    const ok = await electronTemplateSaveDetail(id, template);
+    if (!ok) throw new Error('模板详情写入文件失败');
+  } else {
+    await idbPut(STORE_TEMPLATES, { id, template } as TemplateDetail);
+  }
 
   return entry;
 }
 
-/** 删除模板（同时清除索引、详情、缩略图） */
+/** 删除模板 */
 export async function deleteTemplate(id: string): Promise<void> {
-  const index = loadTemplateIndex().filter((s) => s.id !== id);
-  saveTemplateIndex(index);
-  await Promise.all([
-    idbDelete(STORE_TEMPLATES, id),
-    idbDelete(STORE_THUMBNAILS, id),
-  ]);
+  const index = (await loadTemplateIndexAsync()).filter((s) => s.id !== id);
+  await saveTemplateIndexAsync(index);
+  if (isElectron) {
+    await electronTemplateDelete(id);
+  } else {
+    await Promise.all([
+      idbDelete(STORE_TEMPLATES, id),
+      idbDelete(STORE_THUMBNAILS, id),
+    ]);
+  }
 }
 
-/** 重命名模板（只更新索引层） */
-export function renameTemplate(id: string, newName: string): void {
-  const index = loadTemplateIndex();
+/** 重命名模板 */
+export async function renameTemplate(id: string, newName: string): Promise<void> {
+  const index = await loadTemplateIndexAsync();
   const idx = index.findIndex((s) => s.id === id);
   if (idx >= 0) {
     index[idx].name = newName;
-    saveTemplateIndex(index);
+    await saveTemplateIndexAsync(index);
   }
 }
 

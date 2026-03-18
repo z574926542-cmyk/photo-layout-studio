@@ -13,7 +13,7 @@ import {
   ZoomIn, ZoomOut, Download, Loader2, Zap,
   FilePlus, X, Check, Layers, Copy,
   AlignLeft, AlignCenter, AlignRight,
-  AlignStartVertical, AlignCenterVertical, AlignEndVertical,
+  AlignStartHorizontal, AlignCenterHorizontal, AlignEndHorizontal,
   AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter,
 } from "lucide-react";
 
@@ -196,19 +196,19 @@ export default function TopToolbar() {
                 onClick={() => alignSlots(selectedSlotIds, "top", "selection")}
                 title="顶对齐（相对选中区域）"
               >
-                <AlignStartVertical size={14} />
+                <AlignStartHorizontal size={14} />
               </ToolButton>
               <ToolButton
                 onClick={() => alignSlots(selectedSlotIds, "centerV", "selection")}
                 title="垂直居中（相对选中区域）"
               >
-                <AlignCenterVertical size={14} />
+                <AlignCenterHorizontal size={14} />
               </ToolButton>
               <ToolButton
                 onClick={() => alignSlots(selectedSlotIds, "bottom", "selection")}
                 title="底对齐（相对选中区域）"
               >
-                <AlignEndVertical size={14} />
+                <AlignEndHorizontal size={14} />
               </ToolButton>
               {selectedSlotIds.length >= 3 && (
                 <>

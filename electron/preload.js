@@ -40,6 +40,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => listeners.forEach(({ action, listener }) => ipcRenderer.removeListener(action, listener));
   },
 
+  // ─── 模板库 ───────────────────────────────────────────
+  templateLoadIndex: () => ipcRenderer.invoke('template-load-index'),
+  templateSaveIndex: (indexJson) => ipcRenderer.invoke('template-save-index', indexJson),
+  templateLoadDetail: (id) => ipcRenderer.invoke('template-load-detail', id),
+  templateSaveDetail: (id, template) => ipcRenderer.invoke('template-save-detail', { id, template }),
+  templateDelete: (id) => ipcRenderer.invoke('template-delete', id),
+
   // ─── 环境检测 ───────────────────────────────────────────
   isElectron: true,
   platform: process.platform, // 'win32' | 'darwin' | 'linux'

@@ -1,8 +1,8 @@
 // ============================================================
 // 奇妙奇遇光影集 排版 Studio — 画布交互组件
 // Design: 专业暗夜工作台
-// 功能: 绘制图框、选择（含多选/框选）、移动、缩放手柄、Contain 渲染
-//       裁剪功能已移至右侧素材库（预处理），画布不含裁剪模式
+// 功能: 绘制图框、选择（含多选/框选）、移动、缩放手柄
+//       双击图框进入图片调节模式（平移/缩放图片）
 // ============================================================
 import React, {
   useRef,
@@ -70,6 +70,18 @@ export default function StudioCanvas() {
   const [marquee, setMarquee] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
 
+  // ─── 图片调节模式 ─────────────────────────────────────────
+  // 当前正在调节图片的图框 ID（null = 未进入图片调节模式）
+  const [imageEditSlotId, setImageEditSlotId] = useState<string | null>(null);
+  // 图片调节拖拽状态（使用 ref 避免闭包问题）
+  const imgDragRef = useRef<{
+    active: boolean;
+    startClientX: number;
+    startClientY: number;
+    initOffX: number;
+    initOffY: number;
+  }>({ active: false, startClientX: 0, startClientY: 0, initOffX: 0, initOffY: 0 });
+
   // 画布显示尺寸
   const displayW = canvas.width * zoom;
   const displayH = canvas.height * zoom;
@@ -86,10 +98,83 @@ export default function StudioCanvas() {
     []
   );
 
+  // ─── 退出图片调节模式 ─────────────────────────────────────
+  const exitImageEdit = useCallback(() => {
+    setImageEditSlotId(null);
+  }, []);
+
+  // Escape 退出图片调节模式
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && imageEditSlotId) {
+        exitImageEdit();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [imageEditSlotId, exitImageEdit]);
+
+  // 重置图片变换自定义事件
+  useEffect(() => {
+    const handleReset = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { slotId: string };
+      if (detail?.slotId) {
+        updateSlot(detail.slotId, { offsetX: 0, offsetY: 0, scale: 1 });
+      }
+    };
+    window.addEventListener("reset-image-transform", handleReset);
+    return () => window.removeEventListener("reset-image-transform", handleReset);
+  }, [updateSlot]);
+
+  // ─── 图片调节模式：鼠标事件 ──────────────────────────────
+  useEffect(() => {
+    if (!imageEditSlotId) return;
+
+    const handleImgMouseMove = (e: MouseEvent) => {
+      if (!imgDragRef.current.active) return;
+      const slot = slots.find((s) => s.id === imageEditSlotId);
+      if (!slot) return;
+
+      // 计算图框在屏幕上的像素尺寸
+      const slotPxW = (slot.w / 100) * displayW;
+      const slotPxH = (slot.h / 100) * displayH;
+
+      // 鼠标移动量转换为百分比偏移（相对于图框尺寸）
+      const dxPx = e.clientX - imgDragRef.current.startClientX;
+      const dyPx = e.clientY - imgDragRef.current.startClientY;
+      const dxPct = (dxPx / slotPxW) * 100;
+      const dyPct = (dyPx / slotPxH) * 100;
+
+      const newOffX = clamp(imgDragRef.current.initOffX + dxPct, -200, 200);
+      const newOffY = clamp(imgDragRef.current.initOffY + dyPct, -200, 200);
+
+      updateSlot(imageEditSlotId, {
+        offsetX: round(newOffX, 2),
+        offsetY: round(newOffY, 2),
+      });
+    };
+
+    const handleImgMouseUp = () => {
+      imgDragRef.current.active = false;
+    };
+
+    window.addEventListener("mousemove", handleImgMouseMove);
+    window.addEventListener("mouseup", handleImgMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", handleImgMouseMove);
+      window.removeEventListener("mouseup", handleImgMouseUp);
+    };
+  }, [imageEditSlotId, slots, displayW, displayH, updateSlot]);
+
   // ─── 鼠标按下（画布主体） ─────────────────────────────────
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
       if (e.button !== 0) return;
+      // 点击画布空白区域退出图片调节模式
+      if (imageEditSlotId) {
+        exitImageEdit();
+        return;
+      }
       if ((e.target as HTMLElement).closest("[data-slot]")) return;
       const { x, y } = getCanvasPct(e.clientX, e.clientY);
 
@@ -122,14 +207,31 @@ export default function StudioCanvas() {
         }
       }
     },
-    [mode, getCanvasPct, selectSlot, selectSlots]
+    [mode, getCanvasPct, selectSlot, selectSlots, imageEditSlotId, exitImageEdit]
   );
 
-  // ─── 图框鼠标按下（选择/移动） ────────────────────────────
+  // ─── 图框鼠标按下（选择/移动/图片调节） ──────────────────
   const handleSlotMouseDown = useCallback(
     (e: React.MouseEvent, slot: Slot) => {
       if (e.button !== 0) return;
       e.stopPropagation();
+
+      // 图片调节模式下：在当前图框内按下 → 开始拖拽图片
+      if (imageEditSlotId === slot.id) {
+        imgDragRef.current = {
+          active: true,
+          startClientX: e.clientX,
+          startClientY: e.clientY,
+          initOffX: slot.offsetX,
+          initOffY: slot.offsetY,
+        };
+        return;
+      }
+
+      // 图片调节模式下：点击其他图框 → 退出当前调节模式，选中新图框
+      if (imageEditSlotId && imageEditSlotId !== slot.id) {
+        exitImageEdit();
+      }
 
       if (e.shiftKey) {
         // Shift+点击：切换多选
@@ -165,7 +267,34 @@ export default function StudioCanvas() {
         setIsDragging(true);
       }
     },
-    [mode, getCanvasPct, selectSlot, selectSlots, selectedSlotIds, slots]
+    [mode, getCanvasPct, selectSlot, selectSlots, selectedSlotIds, slots, imageEditSlotId, exitImageEdit]
+  );
+
+  // ─── 图框双击（进入图片调节模式） ────────────────────────
+  const handleSlotDoubleClick = useCallback(
+    (e: React.MouseEvent, slot: Slot) => {
+      e.stopPropagation();
+      // 只有有图片的图框才能进入图片调节模式
+      if (slot.assetId) {
+        setImageEditSlotId(slot.id);
+        selectSlot(slot.id);
+        selectSlots([slot.id]);
+      }
+    },
+    [selectSlot, selectSlots]
+  );
+
+  // ─── 图片调节模式：滚轮缩放图片 ──────────────────────────
+  const handleSlotWheel = useCallback(
+    (e: React.WheelEvent, slot: Slot) => {
+      if (imageEditSlotId !== slot.id) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const delta = e.deltaY > 0 ? -0.05 : 0.05;
+      const newScale = clamp((slot.scale || 1) + delta, 0.1, 5.0);
+      updateSlot(slot.id, { scale: round(newScale, 3) });
+    },
+    [imageEditSlotId, updateSlot]
   );
 
   // ─── 缩放手柄鼠标按下 ─────────────────────────────────────
@@ -331,15 +460,16 @@ export default function StudioCanvas() {
     e.dataTransfer.dropEffect = "copy";
   }, []);
 
-  // Ctrl+滚轮缩放画布
+  // Ctrl+滚轮缩放画布（图片调节模式下不触发）
   const handleWheel = useCallback(
     (e: React.WheelEvent) => {
       if (!e.ctrlKey && !e.metaKey) return;
+      if (imageEditSlotId) return; // 图片调节模式下不缩放画布
       e.preventDefault();
       const delta = e.deltaY > 0 ? -0.1 : 0.1;
       setZoom(clamp(zoom + delta, 0.2, 4.0));
     },
-    [zoom, setZoom]
+    [zoom, setZoom, imageEditSlotId]
   );
 
   return (
@@ -409,8 +539,11 @@ export default function StudioCanvas() {
             asset={assets.find((a) => a.id === slot.assetId) ?? null}
             isSelected={slot.id === selectedSlotId}
             isMultiSelected={selectedSlotIds.includes(slot.id)}
+            isImageEditMode={imageEditSlotId === slot.id}
             zoom={zoom}
             onMouseDown={handleSlotMouseDown}
+            onDoubleClick={handleSlotDoubleClick}
+            onWheel={handleSlotWheel}
             onResizeMouseDown={handleResizeMouseDown}
             onDrop={handleSlotDrop}
             onDragOver={handleSlotDragOver}
@@ -448,6 +581,25 @@ export default function StudioCanvas() {
             }}
           />
         )}
+
+        {/* 图片调节模式提示 */}
+        {imageEditSlotId && (
+          <div
+            className="absolute bottom-2 left-1/2 -translate-x-1/2 z-50 pointer-events-none"
+            style={{
+              background: "oklch(0.15 0.02 264 / 0.92)",
+              border: "1px solid oklch(0.55 0.18 145 / 0.6)",
+              borderRadius: 6,
+              padding: "4px 12px",
+              fontSize: 11,
+              color: "oklch(0.75 0.12 145)",
+              backdropFilter: "blur(8px)",
+              whiteSpace: "nowrap",
+            }}
+          >
+            图片调节模式 · 拖动平移 · 滚轮缩放 · Esc 退出
+          </div>
+        )}
       </div>
       </div>
     </div>
@@ -460,20 +612,27 @@ interface SlotRendererProps {
   asset: import("@/lib/types").Asset | null;
   isSelected: boolean;
   isMultiSelected: boolean;
+  isImageEditMode: boolean;
   zoom: number;
   onMouseDown: (e: React.MouseEvent, slot: Slot) => void;
+  onDoubleClick: (e: React.MouseEvent, slot: Slot) => void;
+  onWheel: (e: React.WheelEvent, slot: Slot) => void;
   onResizeMouseDown: (e: React.MouseEvent, slot: Slot, handle: ResizeHandle) => void;
   onDrop: (e: React.DragEvent, slotId: string) => void;
   onDragOver: (e: React.DragEvent) => void;
   onUnfill: () => void;
 }
+
 function SlotRenderer({
   slot,
   asset,
   isSelected,
   isMultiSelected,
+  isImageEditMode,
   zoom,
   onMouseDown,
+  onDoubleClick,
+  onWheel,
   onResizeMouseDown,
   onDrop,
   onDragOver,
@@ -481,54 +640,85 @@ function SlotRenderer({
 }: SlotRendererProps) {
   const hasFill = !!asset;
 
+  // 边框颜色：图片调节模式=绿色，选中=蓝色，多选=橙色，空框=虚线蓝
+  const outlineStyle = isImageEditMode
+    ? "2px solid oklch(0.65 0.20 145)"
+    : isSelected
+    ? "2px solid oklch(0.58 0.22 264)"
+    : isMultiSelected
+    ? "2px solid oklch(0.72 0.16 55)"
+    : hasFill
+    ? "none"
+    : "1.5px dashed oklch(0.58 0.22 264 / 0.55)";
+
+  const boxShadowStyle = isImageEditMode
+    ? "0 0 0 2px oklch(0.65 0.20 145), 0 0 20px oklch(0.65 0.20 145 / 0.3)"
+    : isSelected
+    ? "0 0 0 2px oklch(0.58 0.22 264), 0 0 20px oklch(0.58 0.22 264 / 0.3)"
+    : isMultiSelected
+    ? "0 0 0 1px oklch(0.72 0.16 55 / 0.5)"
+    : "none";
+
   return (
     <div
       data-slot
       className={cn(
         "absolute group",
-        isSelected ? "z-20" : isMultiSelected ? "z-15" : "z-10"
+        isSelected || isImageEditMode ? "z-20" : isMultiSelected ? "z-15" : "z-10"
       )}
       style={{
         left: `${slot.x}%`,
         top: `${slot.y}%`,
         width: `${slot.w}%`,
         height: `${slot.h}%`,
-        outline: isSelected
-          ? "2px solid oklch(0.58 0.22 264)"
-          : isMultiSelected
-          ? "2px solid oklch(0.72 0.16 55)"
-          : hasFill
-          ? "none"
-          : "1.5px dashed oklch(0.58 0.22 264 / 0.55)",
-        boxShadow: isSelected
-          ? "0 0 0 2px oklch(0.58 0.22 264), 0 0 20px oklch(0.58 0.22 264 / 0.3)"
-          : isMultiSelected
-          ? "0 0 0 1px oklch(0.72 0.16 55 / 0.5)"
-          : "none",
-        cursor: "move",
+        outline: outlineStyle,
+        boxShadow: boxShadowStyle,
+        cursor: isImageEditMode ? "grab" : "move",
         overflow: "hidden",
         transition: "box-shadow 0.15s ease, outline 0.15s ease",
       }}
       onMouseDown={(e) => onMouseDown(e, slot)}
+      onDoubleClick={(e) => onDoubleClick(e, slot)}
+      onWheel={(e) => onWheel(e, slot)}
       onDrop={(e) => onDrop(e, slot.id)}
       onDragOver={onDragOver}
     >
-      {/* 图片填充（Contain 模式：内容完整显示） */}
+      {/* 图片填充 */}
       {asset && (
         <div className="absolute inset-0 overflow-hidden">
           <AspectFillImage asset={asset} slot={slot} />
-          {/* 删除当前图片按钮：悬停时显示，点击清空图框 */}
-          <button
-            className="absolute top-1 right-1 w-5 h-5 rounded flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-40"
-            style={{ background: "oklch(0.62 0.22 25 / 0.92)", border: "1px solid oklch(1 0 0 / 0.2)" }}
-            title="清空图片"
-            onMouseDown={(e) => e.stopPropagation()}
-            onClick={(e) => { e.stopPropagation(); onUnfill(); }}
-          >
-            <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-              <path d="M2 2L8 8M8 2L2 8" stroke="white" strokeWidth="1.5" strokeLinecap="round"/>
-            </svg>
-          </button>
+          {/* 图片调节模式标识角标 */}
+          {isImageEditMode && (
+            <div
+              className="absolute top-1 left-1 z-40 pointer-events-none"
+              style={{
+                background: "oklch(0.65 0.20 145 / 0.9)",
+                borderRadius: 3,
+                padding: "1px 5px",
+                fontSize: 9,
+                color: "white",
+                fontFamily: "system-ui, sans-serif",
+                fontWeight: 600,
+                letterSpacing: "0.05em",
+              }}
+            >
+              图片
+            </div>
+          )}
+          {/* 删除当前图片按钮：悬停时显示，图片调节模式下隐藏 */}
+          {!isImageEditMode && (
+            <button
+              className="absolute top-1 right-1 w-5 h-5 rounded flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-40"
+              style={{ background: "oklch(0.62 0.22 25 / 0.92)", border: "1px solid oklch(1 0 0 / 0.2)" }}
+              title="清空图片"
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => { e.stopPropagation(); onUnfill(); }}
+            >
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                <path d="M2 2L8 8M8 2L2 8" stroke="white" strokeWidth="1.5" strokeLinecap="round"/>
+              </svg>
+            </button>
+          )}
         </div>
       )}
 
@@ -568,8 +758,8 @@ function SlotRenderer({
         </div>
       )}
 
-      {/* 缩放手柄 */}
-      {isSelected &&
+      {/* 缩放手柄（选中且非图片调节模式时显示） */}
+      {isSelected && !isImageEditMode &&
         RESIZE_HANDLES.map((handle) => (
           <div
             key={handle}
@@ -585,11 +775,40 @@ function SlotRenderer({
             onMouseDown={(e) => onResizeMouseDown(e, slot, handle)}
           />
         ))}
+
+      {/* 图片调节模式：显示重置按钮 */}
+      {isImageEditMode && asset && (
+        <button
+          className="absolute bottom-1 right-1 z-40 flex items-center gap-1"
+          style={{
+            background: "oklch(0.15 0.02 264 / 0.85)",
+            border: "1px solid oklch(0.65 0.20 145 / 0.5)",
+            borderRadius: 4,
+            padding: "2px 6px",
+            fontSize: 9,
+            color: "oklch(0.75 0.12 145)",
+            cursor: "pointer",
+            fontFamily: "system-ui, sans-serif",
+          }}
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            // 重置图片位置和缩放
+            // updateSlot is not accessible here, use a callback
+            (e.currentTarget as HTMLElement).dispatchEvent(
+              new CustomEvent("reset-image-transform", { bubbles: true, detail: { slotId: slot.id } })
+            );
+          }}
+          title="重置图片位置和缩放"
+        >
+          重置
+        </button>
+      )}
     </div>
   );
 }
 
-// ─── Contain 图片渲染（保证图片内容完整显示，不裁剪）─────
+// ─── 图片渲染（支持 offsetX/offsetY/scale 平移缩放）────────
 function AspectFillImage({
   asset,
   slot,
@@ -597,8 +816,11 @@ function AspectFillImage({
   asset: import("@/lib/types").Asset;
   slot: Slot;
 }) {
-  // 优先使用裁剪后的图片，如果没有裁剪则用原图
   const displayUrl = asset.croppedDataUrl ?? asset.dataUrl;
+  const offsetX = slot.offsetX ?? 0;
+  const offsetY = slot.offsetY ?? 0;
+  const scale = slot.scale ?? 1;
+
   return (
     <img
       src={displayUrl}
@@ -608,9 +830,12 @@ function AspectFillImage({
         position: "absolute",
         width: "100%",
         height: "100%",
-        // contain 模式：图片完整显示在图框内，保持比例，不裁剪内容
-        objectFit: "contain",
+        // cover 模式：图片铺满图框，保持比例，可通过 transform 调整显示区域
+        objectFit: "cover",
         objectPosition: "center center",
+        // 应用平移和缩放
+        transform: `translate(${offsetX}%, ${offsetY}%) scale(${scale})`,
+        transformOrigin: "center center",
         userSelect: "none",
         pointerEvents: "none",
       }}

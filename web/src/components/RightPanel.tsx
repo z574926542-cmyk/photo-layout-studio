@@ -50,6 +50,7 @@ export default function RightPanel() {
     autoFill,
     autoFillOrdered,
     updateAsset,
+    updateSlot,
   } = useStudio();
   const { assets, slots, selectedSlotId } = state;
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -365,13 +366,52 @@ export default function RightPanel() {
             </div>
           )}
 
-          {selectedSlotId && (
-            <div className="mt-1.5 px-2 py-1 rounded flex items-center gap-1.5"
-              style={{ background: "oklch(0.58 0.22 264 / 0.12)", border: "1px solid oklch(0.58 0.22 264 / 0.25)", color: "oklch(0.72 0.12 264)" }}>
-              <div className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse" />
-              <span style={{ fontSize: "0.7rem" }}>图框已选中 · 点击图片操作</span>
-            </div>
-          )}
+          {selectedSlotId && (() => {
+            const selectedSlot = slots.find(s => s.id === selectedSlotId);
+            const slotHasImage = !!selectedSlot?.assetId;
+            return (
+              <>
+                <div className="mt-1.5 px-2 py-1 rounded flex items-center gap-1.5"
+                  style={{ background: "oklch(0.58 0.22 264 / 0.12)", border: "1px solid oklch(0.58 0.22 264 / 0.25)", color: "oklch(0.72 0.12 264)" }}>
+                  <div className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse" />
+                  <span style={{ fontSize: "0.7rem" }}>
+                    {slotHasImage ? "图框已选中 · 双击调节图片" : "图框已选中 · 点击图片操作"}
+                  </span>
+                </div>
+                {slotHasImage && selectedSlot && (
+                  <div className="mt-1.5 px-2 py-1.5 rounded"
+                    style={{ background: "oklch(0.65 0.20 145 / 0.08)", border: "1px solid oklch(0.65 0.20 145 / 0.2)" }}>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span style={{ fontSize: "0.65rem", color: "oklch(0.65 0.20 145)", fontWeight: 600, letterSpacing: "0.05em" }}>图片变换</span>
+                      <button
+                        onClick={() => updateSlot(selectedSlotId, { offsetX: 0, offsetY: 0, scale: 1 })}
+                        style={{ fontSize: "0.6rem", color: "oklch(0.65 0.20 145)", background: "oklch(0.65 0.20 145 / 0.15)", borderRadius: 3, padding: "1px 6px", border: "1px solid oklch(0.65 0.20 145 / 0.3)", cursor: "pointer" }}
+                      >
+                        重置
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-3 gap-1">
+                      <div className="text-center">
+                        <div style={{ fontSize: "0.58rem", color: "oklch(0.45 0.01 260)", marginBottom: 2 }}>X偏移</div>
+                        <div style={{ fontSize: "0.68rem", color: "oklch(0.78 0.08 260)", fontFamily: "monospace" }}>{(selectedSlot.offsetX ?? 0).toFixed(1)}%</div>
+                      </div>
+                      <div className="text-center">
+                        <div style={{ fontSize: "0.58rem", color: "oklch(0.45 0.01 260)", marginBottom: 2 }}>Y偏移</div>
+                        <div style={{ fontSize: "0.68rem", color: "oklch(0.78 0.08 260)", fontFamily: "monospace" }}>{(selectedSlot.offsetY ?? 0).toFixed(1)}%</div>
+                      </div>
+                      <div className="text-center">
+                        <div style={{ fontSize: "0.58rem", color: "oklch(0.45 0.01 260)", marginBottom: 2 }}>缩放</div>
+                        <div style={{ fontSize: "0.68rem", color: "oklch(0.78 0.08 260)", fontFamily: "monospace" }}>{((selectedSlot.scale ?? 1) * 100).toFixed(0)}%</div>
+                      </div>
+                    </div>
+                    <div style={{ fontSize: "0.58rem", color: "oklch(0.40 0.01 260)", marginTop: 4, textAlign: "center" }}>
+                      双击图框进入调节模式
+                    </div>
+                  </div>
+                )}
+              </>
+            );
+          })()}
 
           {selectedIds.size > 0 && (
             <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">

@@ -21,8 +21,13 @@ function getAPI() {
     openProject: () => Promise<{ success: boolean; data?: string; filePath?: string; canceled?: boolean }>;
     listProjects: () => Promise<{ success: boolean; projects?: Array<{ name: string; path: string; mtime: string }> }>;
     exportPng: (dataUrl: string, defaultName: string) => Promise<{ success: boolean; filePath?: string; canceled?: boolean }>;
-    getDataDir: () => Promise<{ dataDir: string; assetsDir: string; projectsDir: string }>;
+    getDataDir: () => Promise<{ dataDir: string; assetsDir: string; projectsDir: string; templatesDir?: string }>;
     onMenuAction: (callback: (action: string) => void) => () => void;
+    templateLoadIndex: () => Promise<{ success: boolean; data: any[]; error?: string }>;
+    templateSaveIndex: (indexJson: string) => Promise<{ success: boolean; error?: string }>;
+    templateLoadDetail: (id: string) => Promise<{ success: boolean; data?: any; error?: string }>;
+    templateSaveDetail: (id: string, template: any) => Promise<{ success: boolean; error?: string }>;
+    templateDelete: (id: string) => Promise<{ success: boolean; error?: string }>;
     platform: string;
   } | null;
 }
@@ -226,4 +231,80 @@ export async function getDataDir(): Promise<{ dataDir: string; assetsDir: string
     if (api) return await api.getDataDir();
   }
   return null;
+}
+
+// ─── 模板库 IPC 层 ───────────────────────────────────────────
+
+/**
+ * 读取模板索引（Electron: 文件，浏览器: localStorage）
+ */
+export async function electronTemplateLoadIndex(): Promise<any[]> {
+  if (isElectron) {
+    const api = getAPI();
+    if (api) {
+      const result = await api.templateLoadIndex();
+      return result.success ? (result.data ?? []) : [];
+    }
+  }
+  // 浏览器降级: localStorage
+  try {
+    const raw = localStorage.getItem('tpl-index-v2');
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+}
+
+/**
+ * 保存模板索引
+ */
+export async function electronTemplateSaveIndex(index: any[]): Promise<void> {
+  if (isElectron) {
+    const api = getAPI();
+    if (api) {
+      await api.templateSaveIndex(JSON.stringify(index));
+      return;
+    }
+  }
+  // 浏览器降级
+  try { localStorage.setItem('tpl-index-v2', JSON.stringify(index)); } catch {}
+}
+
+/**
+ * 读取单个模板详情
+ */
+export async function electronTemplateLoadDetail(id: string): Promise<any | undefined> {
+  if (isElectron) {
+    const api = getAPI();
+    if (api) {
+      const result = await api.templateLoadDetail(id);
+      return result.success ? result.data : undefined;
+    }
+  }
+  return undefined; // 浏览器降级由 IndexedDB 处理
+}
+
+/**
+ * 保存单个模板详情
+ */
+export async function electronTemplateSaveDetail(id: string, template: any): Promise<boolean> {
+  if (isElectron) {
+    const api = getAPI();
+    if (api) {
+      const result = await api.templateSaveDetail(id, template);
+      return result.success;
+    }
+  }
+  return false; // 浏览器降级由 IndexedDB 处理
+}
+
+/**
+ * 删除单个模板
+ */
+export async function electronTemplateDelete(id: string): Promise<void> {
+  if (isElectron) {
+    const api = getAPI();
+    if (api) {
+      await api.templateDelete(id);
+      return;
+    }
+  }
 }
