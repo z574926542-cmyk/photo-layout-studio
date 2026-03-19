@@ -384,7 +384,7 @@ export default function RightPanel() {
                     <div className="flex items-center justify-between mb-1.5">
                       <span style={{ fontSize: "0.65rem", color: "oklch(0.65 0.20 145)", fontWeight: 600, letterSpacing: "0.05em" }}>图片变换</span>
                       <button
-                        onClick={() => updateSlot(selectedSlotId, { offsetX: 0, offsetY: 0, scale: 1 })}
+                        onClick={() => updateSlot(selectedSlotId, { offsetX: 0, offsetY: 0, scale: 1, rotation: 0 })}
                         style={{ fontSize: "0.6rem", color: "oklch(0.65 0.20 145)", background: "oklch(0.65 0.20 145 / 0.15)", borderRadius: 3, padding: "1px 6px", border: "1px solid oklch(0.65 0.20 145 / 0.3)", cursor: "pointer" }}
                       >
                         重置
@@ -403,9 +403,13 @@ export default function RightPanel() {
                         <div style={{ fontSize: "0.58rem", color: "oklch(0.45 0.01 260)", marginBottom: 2 }}>缩放</div>
                         <div style={{ fontSize: "0.68rem", color: "oklch(0.78 0.08 260)", fontFamily: "monospace" }}>{((selectedSlot.scale ?? 1) * 100).toFixed(0)}%</div>
                       </div>
+                      <div className="text-center">
+                        <div style={{ fontSize: "0.58rem", color: "oklch(0.45 0.01 260)", marginBottom: 2 }}>旋转</div>
+                        <div style={{ fontSize: "0.68rem", color: "oklch(0.78 0.08 260)", fontFamily: "monospace" }}>{Math.round(selectedSlot.rotation ?? 0)}°</div>
+                      </div>
                     </div>
                     <div style={{ fontSize: "0.58rem", color: "oklch(0.40 0.01 260)", marginTop: 4, textAlign: "center" }}>
-                      双击图框进入调节模式
+                      双击图框进入调节模式，Shift+滚轮旋转
                     </div>
                   </div>
                 )}

@@ -198,25 +198,39 @@ export async function exportCanvasToPng(
         ctx.rect(slotX, slotY, slotW, slotH);
         ctx.clip();
 
-        // contain 模式：图片完整显示在图框内，保持比例，居中
+        // cover 模式：图片铺满图框，保持比例
         const imgAR = displaySize.width / displaySize.height;
         const slotAR = slotW / slotH;
         let drawW: number, drawH: number;
         if (imgAR > slotAR) {
-          // 图片更宽：以宽度为基准，高度缩小
-          drawW = slotW;
-          drawH = slotW / imgAR;
-        } else {
-          // 图片更高：以高度为基准，宽度缩小
+          // 图片更宽：以高度为基准
           drawH = slotH;
           drawW = slotH * imgAR;
+        } else {
+          // 图片更高：以宽度为基准
+          drawW = slotW;
+          drawH = slotW / imgAR;
         }
 
-        // 居中放置
-        const drawX = slotX + (slotW - drawW) / 2;
-        const drawY = slotY + (slotH - drawH) / 2;
+        // 应用 offsetX/offsetY/scale/rotation
+        const offsetX = slot.offsetX ?? 0;
+        const offsetY = slot.offsetY ?? 0;
+        const scale = slot.scale ?? 1;
+        const rotation = slot.rotation ?? 0;
 
-        ctx.drawImage(img, drawX, drawY, drawW, drawH);
+        // 中心点
+        const cx = slotX + slotW / 2;
+        const cy = slotY + slotH / 2;
+
+        ctx.translate(cx, cy);
+        ctx.rotate((rotation * Math.PI) / 180);
+        ctx.scale(scale, scale);
+        ctx.translate(
+          (offsetX / 100) * slotW,
+          (offsetY / 100) * slotH
+        );
+
+        ctx.drawImage(img, -drawW / 2, -drawH / 2, drawW, drawH);
         ctx.restore();
         resolve();
       };
@@ -307,6 +321,7 @@ export function createSlot(
     offsetX: 0,
     offsetY: 0,
     scale: 1,
+    rotation: 0,
     label,
   };
 }
@@ -410,6 +425,7 @@ export function templateSlotsToSlots(templateSlots: LayoutTemplate['slots']): Sl
       offsetX: 0,
       offsetY: 0,
       scale: 1,
+      rotation: 0,
       label: typeof raw.label === 'string' ? raw.label : undefined,
     };
   });

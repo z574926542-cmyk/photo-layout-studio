@@ -229,7 +229,7 @@ function reducer(state: StudioState, action: Action): StudioState {
     case "FILL_SLOT": {
       const newSlots = state.slots.map((s) =>
         s.id === action.slotId
-          ? { ...s, assetId: action.assetId, offsetX: 0, offsetY: 0, scale: 1 }
+          ? { ...s, assetId: action.assetId, offsetX: 0, offsetY: 0, scale: 1, rotation: 0 }
           : s
       );
       return pushHistory({ ...state, slots: newSlots });
@@ -247,14 +247,14 @@ function reducer(state: StudioState, action: Action): StudioState {
       if (fillMap.size === 0) return state;
       const newSlots = state.slots.map((s) => {
         const assetId = fillMap.get(s.id);
-        return assetId ? { ...s, assetId, offsetX: 0, offsetY: 0, scale: 1 } : s;
+        return assetId ? { ...s, assetId, offsetX: 0, offsetY: 0, scale: 1, rotation: 0 } : s;
       });
       return pushHistory({ ...state, slots: newSlots });
     }
 
     case "CLEAR_ALL_FILLS": {
       if (state.slots.every((s) => !s.assetId)) return state;
-      const newSlots = state.slots.map((s) => ({ ...s, assetId: null, offsetX: 0, offsetY: 0, scale: 1 }));
+      const newSlots = state.slots.map((s) => ({ ...s, assetId: null, offsetX: 0, offsetY: 0, scale: 1, rotation: 0 }));
       return pushHistory({ ...state, slots: newSlots, selectedSlotId: null });
     }
 
@@ -266,7 +266,7 @@ function reducer(state: StudioState, action: Action): StudioState {
         const idx = emptySlotIds.indexOf(s.id);
         if (idx === -1) return s;
         const assetId = action.assetIds[idx];
-        return assetId ? { ...s, assetId, offsetX: 0, offsetY: 0, scale: 1 } : s;
+        return assetId ? { ...s, assetId, offsetX: 0, offsetY: 0, scale: 1, rotation: 0 } : s;
       });
       return pushHistory({ ...state, slots: newSlots });
     }

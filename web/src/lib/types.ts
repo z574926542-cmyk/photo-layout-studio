@@ -20,6 +20,8 @@ export interface Slot {
   offsetY: number;
   /** 图片缩放比例（相对于 aspect-fill 基准） */
   scale: number;
+  /** 图片旋转角度（度，顺时针，0-360） */
+  rotation: number;
   /** 标签 */
   label?: string;
 }
@@ -156,5 +158,5 @@ export interface PresetTemplate {
   name: string;
   description: string;
   canvas: Pick<CanvasConfig, 'width' | 'height'>;
-  slots: Omit<Slot, 'id' | 'assetId' | 'offsetX' | 'offsetY' | 'scale'>[];
+  slots: Omit<Slot, 'id' | 'assetId' | 'offsetX' | 'offsetY' | 'scale' | 'rotation'>[];
 }

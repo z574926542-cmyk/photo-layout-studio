@@ -82,6 +82,16 @@ export default function StudioCanvas() {
     initOffY: number;
   }>({ active: false, startClientX: 0, startClientY: 0, initOffX: 0, initOffY: 0 });
 
+  // 旋转拖拽状态
+  const rotDragRef = useRef<{
+    active: boolean;
+    slotId: string;
+    centerX: number; // 图框中心屏幕坐标
+    centerY: number;
+    startAngle: number; // 拖拽开始时的角度
+    initRotation: number; // 开始时的旋转角度
+  }>({ active: false, slotId: "", centerX: 0, centerY: 0, startAngle: 0, initRotation: 0 });
+
   // 画布显示尺寸
   const displayW = canvas.width * zoom;
   const displayH = canvas.height * zoom;
@@ -119,12 +129,40 @@ export default function StudioCanvas() {
     const handleReset = (e: Event) => {
       const detail = (e as CustomEvent).detail as { slotId: string };
       if (detail?.slotId) {
-        updateSlot(detail.slotId, { offsetX: 0, offsetY: 0, scale: 1 });
+        updateSlot(detail.slotId, { offsetX: 0, offsetY: 0, scale: 1, rotation: 0 });
       }
     };
     window.addEventListener("reset-image-transform", handleReset);
     return () => window.removeEventListener("reset-image-transform", handleReset);
   }, [updateSlot]);
+
+  // ─── 旋转拖拽事件监听 ──────────────────────────────────────────────
+  useEffect(() => {
+    if (!imageEditSlotId) return;
+
+    const handleRotMouseMove = (e: MouseEvent) => {
+      if (!rotDragRef.current.active) return;
+      const { centerX, centerY, startAngle, initRotation } = rotDragRef.current;
+      // 计算当前鼠标相对图框中心的角度
+      const currentAngle = Math.atan2(e.clientY - centerY, e.clientX - centerX) * (180 / Math.PI);
+      const deltaAngle = currentAngle - startAngle;
+      let newRotation = initRotation + deltaAngle;
+      // 归一化到 -180 ~ 180
+      newRotation = ((newRotation + 180) % 360) - 180;
+      updateSlot(rotDragRef.current.slotId, { rotation: round(newRotation, 1) });
+    };
+
+    const handleRotMouseUp = () => {
+      rotDragRef.current.active = false;
+    };
+
+    window.addEventListener("mousemove", handleRotMouseMove);
+    window.addEventListener("mouseup", handleRotMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", handleRotMouseMove);
+      window.removeEventListener("mouseup", handleRotMouseUp);
+    };
+  }, [imageEditSlotId, updateSlot]);
 
   // ─── 图片调节模式：鼠标事件 ──────────────────────────────
   useEffect(() => {
@@ -284,20 +322,54 @@ export default function StudioCanvas() {
     [selectSlot, selectSlots]
   );
 
-  // ─── 图片调节模式：滚轮缩放图片 ──────────────────────────
+  // ─── 图片调节模式：滚轮缩放（普通）/ 旋转（Shift+滚轮） ────────────────────────
   const handleSlotWheel = useCallback(
     (e: React.WheelEvent, slot: Slot) => {
       if (imageEditSlotId !== slot.id) return;
       e.preventDefault();
       e.stopPropagation();
-      const delta = e.deltaY > 0 ? -0.05 : 0.05;
-      const newScale = clamp((slot.scale || 1) + delta, 0.1, 5.0);
-      updateSlot(slot.id, { scale: round(newScale, 3) });
+      if (e.shiftKey) {
+        // Shift+滚轮 = 旋转（每格 3°）
+        const delta = e.deltaY > 0 ? 3 : -3;
+        let newRotation = ((slot.rotation ?? 0) + delta + 180) % 360 - 180;
+        updateSlot(slot.id, { rotation: round(newRotation, 1) });
+      } else {
+        // 普通滚轮 = 缩放
+        const delta = e.deltaY > 0 ? -0.05 : 0.05;
+        const newScale = clamp((slot.scale || 1) + delta, 0.1, 5.0);
+        updateSlot(slot.id, { scale: round(newScale, 3) });
+      }
     },
     [imageEditSlotId, updateSlot]
   );
 
-  // ─── 缩放手柄鼠标按下 ─────────────────────────────────────
+  // ─── 旋转手柄鼠标按下 ──────────────────────────────────────────────
+  const handleRotateMouseDown = useCallback(
+    (e: React.MouseEvent, slot: Slot) => {
+      if (e.button !== 0) return;
+      e.stopPropagation();
+      e.preventDefault();
+      // 计算图框中心屏幕坐标
+      const slotEl = (e.currentTarget as HTMLElement).closest("[data-slot]") as HTMLElement;
+      if (!slotEl) return;
+      const rect = slotEl.getBoundingClientRect();
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
+      // 计算开始角度
+      const startAngle = Math.atan2(e.clientY - centerY, e.clientX - centerX) * (180 / Math.PI);
+      rotDragRef.current = {
+        active: true,
+        slotId: slot.id,
+        centerX,
+        centerY,
+        startAngle,
+        initRotation: slot.rotation ?? 0,
+      };
+    },
+    []
+  );
+
+  // ─── 缩放手柄鼠标按下 ───────────────────────────────────────────────
   const handleResizeMouseDown = useCallback(
     (e: React.MouseEvent, slot: Slot, handle: ResizeHandle) => {
       if (e.button !== 0) return;
@@ -545,6 +617,7 @@ export default function StudioCanvas() {
             onDoubleClick={handleSlotDoubleClick}
             onWheel={handleSlotWheel}
             onResizeMouseDown={handleResizeMouseDown}
+            onRotateMouseDown={handleRotateMouseDown}
             onDrop={handleSlotDrop}
             onDragOver={handleSlotDragOver}
             onUnfill={() => unfillSlot(slot.id)}
@@ -605,8 +678,7 @@ export default function StudioCanvas() {
     </div>
   );
 }
-
-// ─── 单个图框渲染器 ────────────────────────────────────────
+// ─── 单个图框渲染器 ──────────────────────────────────────────────
 interface SlotRendererProps {
   slot: Slot;
   asset: import("@/lib/types").Asset | null;
@@ -618,6 +690,7 @@ interface SlotRendererProps {
   onDoubleClick: (e: React.MouseEvent, slot: Slot) => void;
   onWheel: (e: React.WheelEvent, slot: Slot) => void;
   onResizeMouseDown: (e: React.MouseEvent, slot: Slot, handle: ResizeHandle) => void;
+  onRotateMouseDown: (e: React.MouseEvent, slot: Slot) => void;
   onDrop: (e: React.DragEvent, slotId: string) => void;
   onDragOver: (e: React.DragEvent) => void;
   onUnfill: () => void;
@@ -634,6 +707,7 @@ function SlotRenderer({
   onDoubleClick,
   onWheel,
   onResizeMouseDown,
+  onRotateMouseDown,
   onDrop,
   onDragOver,
   onUnfill,
@@ -776,39 +850,100 @@ function SlotRenderer({
           />
         ))}
 
-      {/* 图片调节模式：显示重置按钮 */}
+      {/* 图片调节模式：旋转手柄（图框四角外侧） */}
       {isImageEditMode && asset && (
-        <button
-          className="absolute bottom-1 right-1 z-40 flex items-center gap-1"
-          style={{
-            background: "oklch(0.15 0.02 264 / 0.85)",
-            border: "1px solid oklch(0.65 0.20 145 / 0.5)",
-            borderRadius: 4,
-            padding: "2px 6px",
-            fontSize: 9,
-            color: "oklch(0.75 0.12 145)",
-            cursor: "pointer",
-            fontFamily: "system-ui, sans-serif",
-          }}
-          onMouseDown={(e) => e.stopPropagation()}
-          onClick={(e) => {
-            e.stopPropagation();
-            // 重置图片位置和缩放
-            // updateSlot is not accessible here, use a callback
-            (e.currentTarget as HTMLElement).dispatchEvent(
-              new CustomEvent("reset-image-transform", { bubbles: true, detail: { slotId: slot.id } })
-            );
-          }}
-          title="重置图片位置和缩放"
-        >
-          重置
-        </button>
+        <>
+          {/* 旋转手柄：右上角（主手柄，最常用） */}
+          <div
+            className="absolute z-50"
+            style={{
+              top: -20,
+              right: -20,
+              width: 16,
+              height: 16,
+              cursor: "crosshair",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+            onMouseDown={(e) => { e.stopPropagation(); onRotateMouseDown(e, slot); }}
+            title="拖动旋转图片"
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <circle cx="7" cy="7" r="6" stroke="oklch(0.65 0.20 145)" strokeWidth="1.5" fill="oklch(0.15 0.02 264 / 0.85)"/>
+              <path d="M4.5 4.5 A3.5 3.5 0 1 1 4.5 9.5" stroke="oklch(0.75 0.15 145)" strokeWidth="1.5" strokeLinecap="round" fill="none"/>
+              <path d="M3 3.5 L4.5 4.5 L5.5 3" stroke="oklch(0.75 0.15 145)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+            </svg>
+          </div>
+          {/* 左上角旋转手柄 */}
+          <div
+            className="absolute z-50"
+            style={{
+              top: -20,
+              left: -20,
+              width: 16,
+              height: 16,
+              cursor: "crosshair",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+            onMouseDown={(e) => { e.stopPropagation(); onRotateMouseDown(e, slot); }}
+            title="拖动旋转图片"
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <circle cx="7" cy="7" r="6" stroke="oklch(0.65 0.20 145)" strokeWidth="1.5" fill="oklch(0.15 0.02 264 / 0.85)"/>
+              <path d="M4.5 4.5 A3.5 3.5 0 1 1 4.5 9.5" stroke="oklch(0.75 0.15 145)" strokeWidth="1.5" strokeLinecap="round" fill="none"/>
+              <path d="M3 3.5 L4.5 4.5 L5.5 3" stroke="oklch(0.75 0.15 145)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+            </svg>
+          </div>
+          {/* 重置按钮 */}
+          <button
+            className="absolute bottom-1 right-1 z-40 flex items-center gap-1"
+            style={{
+              background: "oklch(0.15 0.02 264 / 0.85)",
+              border: "1px solid oklch(0.65 0.20 145 / 0.5)",
+              borderRadius: 4,
+              padding: "2px 6px",
+              fontSize: 9,
+              color: "oklch(0.75 0.12 145)",
+              cursor: "pointer",
+              fontFamily: "system-ui, sans-serif",
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              (e.currentTarget as HTMLElement).dispatchEvent(
+                new CustomEvent("reset-image-transform", { bubbles: true, detail: { slotId: slot.id } })
+              );
+            }}
+            title="重置图片位置、缩放和旋转"
+          >
+            重置
+          </button>
+          {/* 旋转角度显示 */}
+          {(slot.rotation ?? 0) !== 0 && (
+            <div
+              className="absolute bottom-1 left-1 z-40 pointer-events-none"
+              style={{
+                background: "oklch(0.15 0.02 264 / 0.85)",
+                border: "1px solid oklch(0.65 0.20 145 / 0.4)",
+                borderRadius: 3,
+                padding: "1px 5px",
+                fontSize: 9,
+                color: "oklch(0.75 0.12 145)",
+                fontFamily: "'JetBrains Mono', monospace",
+              }}
+            >
+              {Math.round(slot.rotation ?? 0)}°
+            </div>
+          )}
+        </>
       )}
     </div>
   );
 }
-
-// ─── 图片渲染（支持 offsetX/offsetY/scale 平移缩放）────────
+// ─── 图片渲染（支持 offsetX/offsetY/scale/rotation）────
 function AspectFillImage({
   asset,
   slot,
@@ -820,6 +955,7 @@ function AspectFillImage({
   const offsetX = slot.offsetX ?? 0;
   const offsetY = slot.offsetY ?? 0;
   const scale = slot.scale ?? 1;
+  const rotation = slot.rotation ?? 0;
 
   return (
     <img
@@ -830,11 +966,11 @@ function AspectFillImage({
         position: "absolute",
         width: "100%",
         height: "100%",
-        // cover 模式：图片铺满图框，保持比例，可通过 transform 调整显示区域
+        // cover 模式：图片铺满图框，保持比例
         objectFit: "cover",
         objectPosition: "center center",
-        // 应用平移和缩放
-        transform: `translate(${offsetX}%, ${offsetY}%) scale(${scale})`,
+        // 应用平移、缩放、旋转
+        transform: `translate(${offsetX}%, ${offsetY}%) scale(${scale}) rotate(${rotation}deg)`,
         transformOrigin: "center center",
         userSelect: "none",
         pointerEvents: "none",

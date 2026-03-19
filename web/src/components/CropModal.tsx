@@ -6,7 +6,7 @@
 //       重新打开时恢复上次裁剪框位置
 // ============================================================
 import React, { useRef, useEffect, useState, useCallback } from "react";
-import { X, Check, RotateCcw, Crop } from "lucide-react";
+import { X, Check, RotateCcw, RotateCw, Crop } from "lucide-react";
 import type { Asset, CropRect } from "@/lib/types";
 
 interface CropBox {
@@ -57,6 +57,14 @@ export default function CropModal({ asset, onConfirm, onCancel }: CropModalProps
     }
     return { x: 5, y: 5, w: 90, h: 90 };
   });
+
+  // 旋转角度（预处理阶段旋转原图）
+  const [rotationDeg, setRotationDeg] = useState(0);
+
+  // 旋转 90 度
+  const handleRotate = useCallback((dir: 1 | -1) => {
+    setRotationDeg((prev) => ((prev + dir * 90) % 360 + 360) % 360);
+  }, []);
 
   // 拖拽状态
   const dragRef = useRef<{
@@ -286,11 +294,6 @@ export default function CropModal({ asset, onConfirm, onCancel }: CropModalProps
     const srcW = Math.round((cropBox.w / 100) * asset.naturalWidth);
     const srcH = Math.round((cropBox.h / 100) * asset.naturalHeight);
 
-    const canvas = document.createElement("canvas");
-    canvas.width = srcW;
-    canvas.height = srcH;
-    const ctx = canvas.getContext("2d")!;
-
     const img = new Image();
     img.src = asset.dataUrl;
     await new Promise<void>((resolve) => {
@@ -298,13 +301,36 @@ export default function CropModal({ asset, onConfirm, onCancel }: CropModalProps
       if (img.complete) resolve();
     });
 
-    ctx.drawImage(img, srcX, srcY, srcW, srcH, 0, 0, srcW, srcH);
+    // 如果有旋转，先将裁剪区域旋转后写入 canvas
+    const rad = (rotationDeg * Math.PI) / 180;
+    // 旋转后宽高交换（仅 90/270 时）
+    const is90or270 = rotationDeg === 90 || rotationDeg === 270;
+    const outW = is90or270 ? srcH : srcW;
+    const outH = is90or270 ? srcW : srcH;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = outW;
+    canvas.height = outH;
+    const ctx = canvas.getContext("2d")!;
+
+    // 先裁剪到中间 canvas
+    const tmpCanvas = document.createElement("canvas");
+    tmpCanvas.width = srcW;
+    tmpCanvas.height = srcH;
+    const tmpCtx = tmpCanvas.getContext("2d")!;
+    tmpCtx.drawImage(img, srcX, srcY, srcW, srcH, 0, 0, srcW, srcH);
+
+    // 旋转并写入最终 canvas
+    ctx.translate(outW / 2, outH / 2);
+    ctx.rotate(rad);
+    ctx.drawImage(tmpCanvas, -srcW / 2, -srcH / 2, srcW, srcH);
+
     const croppedDataUrl = canvas.toDataURL("image/png", 1.0);
 
     // 保存裁剪框坐标（像素，相对于原始图片）
-    const cropRect: CropRect = { x: srcX, y: srcY, width: srcW, height: srcH };
+    const cropRect: CropRect = { x: srcX, y: srcY, width: outW, height: outH };
 
-    // 返回更新后的 Asset（保留原始 dataUrl，追加裁剪信息）
+    // 返回更新后的 Asset（保留原始 dataUrl，追加裁剪+旋转信息）
     const updatedAsset: Asset = {
       ...asset,
       croppedDataUrl,
@@ -312,7 +338,7 @@ export default function CropModal({ asset, onConfirm, onCancel }: CropModalProps
     };
 
     onConfirm(updatedAsset);
-  }, [asset, cropBox, onConfirm]);
+  }, [asset, cropBox, rotationDeg, onConfirm]);
 
   // 键盘快捷键
   useEffect(() => {
@@ -440,6 +466,53 @@ export default function CropModal({ asset, onConfirm, onCancel }: CropModalProps
             重置
           </button>
 
+          {/* 左旋 90° */}
+          <button
+            onClick={() => handleRotate(-1)}
+            title="左旋 90°"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-all"
+            style={{
+              background: "oklch(0.20 0.015 260)",
+              border: "1px solid oklch(1 0 0 / 0.1)",
+              color: "oklch(0.75 0.12 200)",
+              fontFamily: "'Space Grotesk', sans-serif",
+            }}
+          >
+            <RotateCcw size={13} />
+            左旋
+          </button>
+
+          {/* 右旋 90° */}
+          <button
+            onClick={() => handleRotate(1)}
+            title="右旋 90°"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-all"
+            style={{
+              background: "oklch(0.20 0.015 260)",
+              border: "1px solid oklch(1 0 0 / 0.1)",
+              color: "oklch(0.75 0.12 200)",
+              fontFamily: "'Space Grotesk', sans-serif",
+            }}
+          >
+            <RotateCw size={13} />
+            右旋
+          </button>
+
+          {/* 旋转角度显示 */}
+          {rotationDeg !== 0 && (
+            <span
+              className="text-xs px-2 py-1 rounded"
+              style={{
+                background: "oklch(0.25 0.04 200 / 0.6)",
+                color: "oklch(0.75 0.12 200)",
+                fontFamily: "'JetBrains Mono', monospace",
+                border: "1px solid oklch(0.75 0.12 200 / 0.3)",
+              }}
+            >
+              {rotationDeg}°
+            </span>
+          )}
+
           {/* 取消 */}
           <button
             onClick={onCancel}
@@ -502,6 +575,9 @@ export default function CropModal({ asset, onConfirm, onCancel }: CropModalProps
             height: imgRect.h,
             objectFit: "fill",
             userSelect: "none",
+            transform: `rotate(${rotationDeg}deg)`,
+            transformOrigin: "center center",
+            transition: "transform 0.25s ease",
           }}
         />
 
