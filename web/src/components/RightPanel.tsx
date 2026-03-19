@@ -11,7 +11,7 @@ import {
   FolderPlus, FolderOpen, ChevronRight, Home,
 } from "lucide-react";
 import { toast } from "sonner";
-import CropModal from "./CropModal";
+import EditImageModal from "./EditImageModal";
 import type { Asset } from "@/lib/types";
 
 interface AssetFolder {
@@ -324,12 +324,12 @@ export default function RightPanel() {
   return (
     <>
       {cropTarget && (
-        <CropModal
+        <EditImageModal
           asset={cropTarget}
           onConfirm={(updated) => {
             updateAsset(updated.id, { croppedDataUrl: updated.croppedDataUrl, cropRect: updated.cropRect });
             setCropTarget(null);
-            toast.success("裁剪完成！可拖拽或点击填入图框");
+            toast.success("编辑完成！可拖拽或点击填入图框");
           }}
           onCancel={() => setCropTarget(null)}
         />
@@ -720,7 +720,7 @@ export default function RightPanel() {
                           style={{ background: asset.cropRect ? "oklch(0.62 0.20 45 / 0.9)" : "oklch(0.62 0.20 45 / 0.7)", color: "oklch(0.98 0.005 260)", fontSize: "0.68rem" }}
                         >
                           <Crop size={10} />
-                          {asset.cropRect ? "重新裁剪" : "裁剪图片"}
+                          {asset.cropRect ? "重新编辑" : "编辑图片"}
                         </button>
                         {isUsed && (
                           <button

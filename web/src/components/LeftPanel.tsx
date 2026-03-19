@@ -12,7 +12,7 @@ import {
   Lock, Unlock, Trash2, Plus, Save, FolderOpen,
   ChevronDown, ChevronRight, Pencil, Check, X,
   Image, Layers, LayoutTemplate, Bookmark, PackagePlus, Upload, Loader2,
-  ArrowUp, ArrowDown, ChevronsUp, ChevronsDown, Copy,
+  ArrowUp, ArrowDown, ChevronsUp, ChevronsDown, Copy, RotateCcw,
 } from "lucide-react";
 import type { TemplateIndex } from "@/lib/templateDb";
 import { getThumbnail, loadTemplateDetail } from "@/lib/templateDb";
@@ -349,6 +349,16 @@ function SlotSection() {
       updateSlot(selectedSlot.id, { scale: round(num, 2) });
     }
   };
+  const handleRotationChange = (val: number) => {
+    const clamped = Math.max(-180, Math.min(180, val));
+    updateSlot(selectedSlot.id, { rotation: round(clamped, 1) });
+  };
+  const handleRotationWheel = (e: React.WheelEvent) => {
+    e.preventDefault();
+    const step = e.shiftKey ? 5 : 1;
+    const current = selectedSlot.rotation ?? 0;
+    handleRotationChange(current + (e.deltaY > 0 ? step : -step));
+  };
 
   return (
     <div
@@ -408,6 +418,52 @@ function SlotSection() {
             />
             <div className="text-xs text-right mono-input" style={{ color: "oklch(0.58 0.22 264)" }}>
               {(selectedSlot.scale * 100).toFixed(0)}%
+            </div>
+          </div>
+          {/* 旋转角度 */}
+          <div className="mt-2">
+            <div className="flex items-center justify-between mb-1">
+              <div className="text-xs" style={{ color: "oklch(0.55 0.015 260)" }}>旋转角度</div>
+              <button
+                onClick={() => handleRotationChange(0)}
+                className="flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs hover:opacity-80"
+                style={{ background: "oklch(0.20 0.015 260)", color: "oklch(0.55 0.015 260)" }}
+              >
+                <RotateCcw size={9} /> 重置
+              </button>
+            </div>
+            <input
+              type="range"
+              min={-180}
+              max={180}
+              step={0.5}
+              value={selectedSlot.rotation ?? 0}
+              onChange={(e) => handleRotationChange(parseFloat(e.target.value))}
+              className="w-full"
+              style={{ accentColor: "oklch(0.62 0.20 45)" }}
+            />
+            <div className="flex items-center gap-2 mt-1">
+              <input
+                type="number"
+                min={-180}
+                max={180}
+                step={1}
+                value={selectedSlot.rotation ?? 0}
+                onChange={(e) => handleRotationChange(parseFloat(e.target.value))}
+                onWheel={handleRotationWheel}
+                className="flex-1 px-2 py-1 rounded text-xs text-right"
+                style={{
+                  background: "oklch(0.20 0.015 260)",
+                  border: "1px solid oklch(0.62 0.20 45 / 0.4)",
+                  color: "oklch(0.92 0.008 260)",
+                  fontFamily: "'JetBrains Mono', monospace",
+                  outline: "none",
+                }}
+              />
+              <span className="text-xs" style={{ color: "oklch(0.55 0.015 260)" }}>°</span>
+              <span className="text-xs" style={{ color: "oklch(0.62 0.20 45)", fontFamily: "monospace" }}>
+                {((selectedSlot.rotation ?? 0) > 0 ? "+" : "")}{(selectedSlot.rotation ?? 0).toFixed(1)}°
+              </span>
             </div>
           </div>
         </div>
