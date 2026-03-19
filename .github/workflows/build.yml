@@ -27,10 +27,22 @@ jobs:
           cd web
           pnpm install --no-frozen-lockfile
           pnpm build
+      - name: Free disk space
+        run: |
+          sudo rm -rf /Library/Developer/CoreSimulator/Profiles/Runtimes || true
+          df -h
       - name: Build macOS DMG
-        run: npx electron-builder --mac
+        run: |
+          for i in 1 2 3; do
+            echo "Build attempt $i..."
+            npx electron-builder --mac && break
+            echo "Attempt $i failed, waiting 15s before retry..."
+            sleep 15
+          done
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+          ELECTRON_BUILDER_ALLOW_UNRESOLVED_DEPENDENCIES: true
       - name: Upload macOS DMG
         uses: actions/upload-artifact@v4
         with:
