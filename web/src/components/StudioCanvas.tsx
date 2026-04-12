@@ -780,7 +780,7 @@ export default function StudioCanvas() {
               {/* 右方 */}
               {(x + w) < 100 && <div className="absolute pointer-events-none" style={{ left: `${x + w}%`, top: `${y}%`, width: `${100 - x - w}%`, height: `${h}%`, background: "oklch(0 0 0 / 0.45)", zIndex: 25 }} />}
               {/* 图框边界轮廓线 */}
-              <div className="absolute pointer-events-none" style={{ left: `${x}%`, top: `${y}%`, width: `${w}%`, height: `${h}%`, border: "2px solid oklch(0.65 0.20 145 / 0.8)", zIndex: 26, boxShadow: "0 0 0 1px oklch(0.65 0.20 145 / 0.3)" }} />
+              <div className="absolute pointer-events-none" style={{ left: `${x}%`, top: `${y}%`, width: `${w}%`, height: `${h}%`, border: "2px solid oklch(0.65 0.20 145 / 0.8)", zIndex: 26, boxShadow: "0 0 0 1px oklch(0.65 0.20 145 / 0.3)", borderRadius: editSlot.borderRadius ? `${editSlot.borderRadius}%` : undefined }} />
             </>
           );
         })()}
@@ -887,6 +887,8 @@ function SlotRenderer({
         // 编辑模式下需要更高 z-index 确保图片显示在其他图框上方
         zIndex: isImageEditMode ? 30 : undefined,
         transition: "box-shadow 0.15s ease, outline 0.15s ease",
+        // 圆角：将百分比转换为相对于图框短边的像素值
+        borderRadius: slot.borderRadius ? `${slot.borderRadius}%` : undefined,
       }}
       onMouseDown={(e) => onMouseDown(e, slot)}
       onDoubleClick={(e) => onDoubleClick(e, slot)}
@@ -901,6 +903,7 @@ function SlotRenderer({
           style={{
             // 普通模式：裁剪显示；编辑模式：不裁剪，让图片完整可见
             overflow: isImageEditMode ? "visible" : "hidden",
+            borderRadius: slot.borderRadius ? `${slot.borderRadius}%` : undefined,
           }}
         >
           <AspectFillImage asset={asset} slot={slot} canvasW={canvasW} canvasH={canvasH} isEditMode={isImageEditMode} />

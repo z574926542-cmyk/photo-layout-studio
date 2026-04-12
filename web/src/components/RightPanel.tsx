@@ -52,6 +52,7 @@ export default function RightPanel() {
     updateAsset,
     updateSlot,
     addOverlayFromDataUrl,
+    batchFillSelected,
   } = useStudio();
   const { assets, slots, selectedSlotId } = state;
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -379,6 +380,37 @@ export default function RightPanel() {
                     {slotHasImage ? "图框已选中 · 双击调节图片" : "图框已选中 · 点击图片操作"}
                   </span>
                 </div>
+                {selectedSlot && (
+                  <div className="mt-1.5 px-2 py-1.5 rounded"
+                    style={{ background: "oklch(0.58 0.22 264 / 0.06)", border: "1px solid oklch(0.58 0.22 264 / 0.18)" }}>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span style={{ fontSize: "0.65rem", color: "oklch(0.72 0.12 264)", fontWeight: 600, letterSpacing: "0.05em" }}>图框圆角</span>
+                      <span style={{ fontSize: "0.65rem", color: "oklch(0.78 0.08 264)", fontFamily: "monospace", minWidth: 28, textAlign: "right" }}>
+                        {Math.round(selectedSlot.borderRadius ?? 0)}%
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={50}
+                      step={1}
+                      value={selectedSlot.borderRadius ?? 0}
+                      onChange={(e) => updateSlot(selectedSlotId, { borderRadius: Number(e.target.value) })}
+                      onWheel={(e) => {
+                        e.preventDefault();
+                        const delta = e.deltaY < 0 ? 1 : -1;
+                        const cur = selectedSlot.borderRadius ?? 0;
+                        updateSlot(selectedSlotId, { borderRadius: Math.max(0, Math.min(50, cur + delta)) });
+                      }}
+                      className="w-full"
+                      style={{ accentColor: "oklch(0.58 0.22 264)", cursor: "pointer" }}
+                    />
+                    <div className="flex justify-between mt-0.5">
+                      <span style={{ fontSize: "0.55rem", color: "oklch(0.40 0.01 260)" }}>直角</span>
+                      <span style={{ fontSize: "0.55rem", color: "oklch(0.40 0.01 260)" }}>圆形</span>
+                    </div>
+                  </div>
+                )}
                 {slotHasImage && selectedSlot && (
                   <div className="mt-1.5 px-2 py-1.5 rounded"
                     style={{ background: "oklch(0.65 0.20 145 / 0.08)", border: "1px solid oklch(0.65 0.20 145 / 0.2)" }}>
@@ -432,6 +464,19 @@ export default function RightPanel() {
                 className="px-1.5 py-0.5 rounded flex items-center gap-1"
                 style={{ background: "oklch(0.55 0.22 25 / 0.2)", color: "oklch(0.75 0.18 25)", fontSize: "0.65rem" }}>
                 <Trash2 size={9} /> 删除
+              </button>
+              <button
+                onClick={() => {
+                  const ids = Array.from(selectedIds);
+                  if (ids.length === 0) return;
+                  batchFillSelected(ids);
+                  setSelectedIds(new Set());
+                }}
+                disabled={emptyCount === 0}
+                className="px-1.5 py-0.5 rounded flex items-center gap-1 disabled:opacity-40"
+                style={{ background: "oklch(0.58 0.22 264 / 0.2)", color: "oklch(0.75 0.14 264)", fontSize: "0.65rem", border: "1px solid oklch(0.58 0.22 264 / 0.35)" }}
+                title={emptyCount === 0 ? "没有空图框" : `将选中的 ${selectedIds.size} 张照片按顺序填入空图框`}>
+                <Zap size={9} /> 填入图框
               </button>
             </div>
           )}

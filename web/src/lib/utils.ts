@@ -196,7 +196,29 @@ export async function exportCanvasToPng(
       img.onload = () => {
         ctx.save();
         ctx.beginPath();
-        ctx.rect(slotX, slotY, slotW, slotH);
+        // 支持圆角：borderRadius 为百分比，转换为短边的像素半径
+        if (slot.borderRadius && slot.borderRadius > 0) {
+          const minSide = Math.min(slotW, slotH);
+          const radius = Math.min((slot.borderRadius / 100) * minSide, slotW / 2, slotH / 2);
+          if (typeof ctx.roundRect === 'function') {
+            ctx.roundRect(slotX, slotY, slotW, slotH, radius);
+          } else {
+            // 降级：手动绘制圆角矩形
+            const r = radius;
+            ctx.moveTo(slotX + r, slotY);
+            ctx.lineTo(slotX + slotW - r, slotY);
+            ctx.arcTo(slotX + slotW, slotY, slotX + slotW, slotY + r, r);
+            ctx.lineTo(slotX + slotW, slotY + slotH - r);
+            ctx.arcTo(slotX + slotW, slotY + slotH, slotX + slotW - r, slotY + slotH, r);
+            ctx.lineTo(slotX + r, slotY + slotH);
+            ctx.arcTo(slotX, slotY + slotH, slotX, slotY + slotH - r, r);
+            ctx.lineTo(slotX, slotY + r);
+            ctx.arcTo(slotX, slotY, slotX + r, slotY, r);
+            ctx.closePath();
+          }
+        } else {
+          ctx.rect(slotX, slotY, slotW, slotH);
+        }
         ctx.clip();
 
         // cover 模式：图片铺满图框，保持比例

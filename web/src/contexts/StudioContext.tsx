@@ -107,7 +107,9 @@ type Action =
   | { type: "DELETE_OVERLAY"; id: string }
   | { type: "SELECT_OVERLAY"; id: string | null }
   | { type: "SET_OVERLAYS"; overlays: OverlayItem[] }
-  | { type: "REORDER_OVERLAY"; id: string; direction: "up" | "down" | "top" | "bottom" };
+  | { type: "REORDER_OVERLAY"; id: string; direction: "up" | "down" | "top" | "bottom" }
+  // ─── 批量填充选中素材 ──────────────────────────────────────
+  | { type: "BATCH_FILL_SELECTED"; assetIds: string[] };
 
 // ─── Initial State ────────────────────────────────────────
 const DEFAULT_CANVAS: CanvasConfig = {
@@ -583,6 +585,22 @@ function reducer(state: StudioState, action: Action): StudioState {
       return { ...state, overlays: arr };
     }
 
+    case "BATCH_FILL_SELECTED": {
+      // 将选中的素材按顺序填入空图框（从上到下、从左到右）
+      const emptySlots = state.slots.filter((s) => !s.assetId);
+      if (emptySlots.length === 0 || action.assetIds.length === 0) return state;
+      // 按位置排序空图框（先 y 后 x）
+      const sortedEmpty = [...emptySlots].sort((a, b) => a.y !== b.y ? a.y - b.y : a.x - b.x);
+      const newSlots = state.slots.map((s) => {
+        const idx = sortedEmpty.findIndex((e) => e.id === s.id);
+        if (idx === -1) return s;
+        const assetId = action.assetIds[idx];
+        if (!assetId) return s;
+        return { ...s, assetId, offsetX: 0, offsetY: 0, scale: 1, rotation: 0 };
+      });
+      return pushHistory({ ...state, slots: newSlots });
+    }
+
     default:
       return state;
   }
@@ -673,6 +691,8 @@ export interface StudioContextValue {  state: StudioState;
   reorderOverlay: (id: string, direction: "up" | "down" | "top" | "bottom") => void;
   /** 当前选中的装饰层 */
   selectedOverlay: OverlayItem | null;
+  /** 将选中的多张素材按顺序填入空图框 */
+  batchFillSelected: (assetIds: string[]) => void;
 }
 
 const StudioContext = createContext<StudioContextValue | null>(null);
@@ -771,6 +791,11 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   }, []);
   const reorderSlot = useCallback((id: string, direction: "up" | "down" | "top" | "bottom") => {
     dispatch({ type: "REORDER_SLOT", id, direction });
+  }, []);
+  const batchFillSelected = useCallback((assetIds: string[]) => {
+    if (assetIds.length === 0) return;
+    dispatch({ type: "BATCH_FILL_SELECTED", assetIds });
+    toast.success(`已将 ${assetIds.length} 张照片填入图框`);
   }, []);
   const duplicateSlot = useCallback((id: string) => {
     dispatch({ type: "DUPLICATE_SLOT", id });
@@ -1133,6 +1158,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     selectOverlay,
     reorderOverlay,
     selectedOverlay,
+    batchFillSelected,
   };
 
   return (

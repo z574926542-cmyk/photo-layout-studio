@@ -24,6 +24,8 @@ export interface Slot {
   rotation: number;
   /** 标签 */
   label?: string;
+  /** 圆角半径（百分比，0=直角，50=全圆，默认 0） */
+  borderRadius?: number;
 }
 
 /** 裁剪框坐标（像素，相对于原始图片） */
