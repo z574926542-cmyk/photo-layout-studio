@@ -485,6 +485,36 @@ function SlotSection() {
         </div>
       )}
 
+      {/* 圆角倒角 */}
+      <div>
+        <div className="flex items-center justify-between mb-1">
+          <div className="text-xs" style={{ color: "oklch(0.55 0.015 260)" }}>圆角倒角</div>
+          <span className="text-xs" style={{ color: "oklch(0.58 0.22 264)", fontFamily: "'JetBrains Mono', monospace" }}>
+            {Math.round(selectedSlot.borderRadius ?? 0)}
+          </span>
+        </div>
+        <input
+          type="range"
+          min={0}
+          max={50}
+          step={1}
+          value={selectedSlot.borderRadius ?? 0}
+          onChange={(e) => updateSlot(selectedSlot.id, { borderRadius: Number(e.target.value) })}
+          onWheel={(e) => {
+            e.preventDefault();
+            const delta = e.deltaY < 0 ? 1 : -1;
+            const cur = selectedSlot.borderRadius ?? 0;
+            updateSlot(selectedSlot.id, { borderRadius: Math.max(0, Math.min(50, cur + delta)) });
+          }}
+          className="w-full"
+          style={{ accentColor: "oklch(0.58 0.22 264)", cursor: "pointer" }}
+        />
+        <div className="flex justify-between mt-0.5">
+          <span className="text-xs" style={{ color: "oklch(0.40 0.01 260)" }}>直角</span>
+          <span className="text-xs" style={{ color: "oklch(0.40 0.01 260)" }}>圆形</span>
+        </div>
+      </div>
+
       {/* 标签 */}
       <div>
         <div className="text-xs mb-1" style={{ color: "oklch(0.55 0.015 260)" }}>标签</div>

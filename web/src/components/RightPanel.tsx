@@ -381,37 +381,7 @@ export default function RightPanel() {
                     {slotHasImage ? "图框已选中 · 双击调节图片" : "图框已选中 · 点击图片操作"}
                   </span>
                 </div>
-                {selectedSlot && (
-                  <div className="mt-1.5 px-2 py-1.5 rounded"
-                    style={{ background: "oklch(0.58 0.22 264 / 0.06)", border: "1px solid oklch(0.58 0.22 264 / 0.18)" }}>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <span style={{ fontSize: "0.65rem", color: "oklch(0.72 0.12 264)", fontWeight: 600, letterSpacing: "0.05em" }}>图框圆角</span>
-                      <span style={{ fontSize: "0.65rem", color: "oklch(0.78 0.08 264)", fontFamily: "monospace", minWidth: 28, textAlign: "right" }}>
-                        {Math.round(selectedSlot.borderRadius ?? 0)}%
-                      </span>
-                    </div>
-                    <input
-                      type="range"
-                      min={0}
-                      max={50}
-                      step={1}
-                      value={selectedSlot.borderRadius ?? 0}
-                      onChange={(e) => updateSlot(selectedSlotId, { borderRadius: Number(e.target.value) })}
-                      onWheel={(e) => {
-                        e.preventDefault();
-                        const delta = e.deltaY < 0 ? 1 : -1;
-                        const cur = selectedSlot.borderRadius ?? 0;
-                        updateSlot(selectedSlotId, { borderRadius: Math.max(0, Math.min(50, cur + delta)) });
-                      }}
-                      className="w-full"
-                      style={{ accentColor: "oklch(0.58 0.22 264)", cursor: "pointer" }}
-                    />
-                    <div className="flex justify-between mt-0.5">
-                      <span style={{ fontSize: "0.55rem", color: "oklch(0.40 0.01 260)" }}>直角</span>
-                      <span style={{ fontSize: "0.55rem", color: "oklch(0.40 0.01 260)" }}>圆形</span>
-                    </div>
-                  </div>
-                )}
+
                 {slotHasImage && selectedSlot && (
                   <div className="mt-1.5 px-2 py-1.5 rounded"
                     style={{ background: "oklch(0.65 0.20 145 / 0.08)", border: "1px solid oklch(0.65 0.20 145 / 0.2)" }}>

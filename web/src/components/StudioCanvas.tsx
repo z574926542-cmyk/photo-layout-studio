@@ -780,7 +780,17 @@ export default function StudioCanvas() {
               {/* 右方 */}
               {(x + w) < 100 && <div className="absolute pointer-events-none" style={{ left: `${x + w}%`, top: `${y}%`, width: `${100 - x - w}%`, height: `${h}%`, background: "oklch(0 0 0 / 0.45)", zIndex: 25 }} />}
               {/* 图框边界轮廓线 */}
-              <div className="absolute pointer-events-none" style={{ left: `${x}%`, top: `${y}%`, width: `${w}%`, height: `${h}%`, border: "2px solid oklch(0.65 0.20 145 / 0.8)", zIndex: 26, boxShadow: "0 0 0 1px oklch(0.65 0.20 145 / 0.3)", borderRadius: editSlot.borderRadius ? `${editSlot.borderRadius}%` : undefined }} />
+              {(() => {
+                const editPxW = (w / 100) * canvas.width;
+                const editPxH = (h / 100) * canvas.height;
+                const editShort = Math.min(editPxW, editPxH);
+                const editRadiusPx = editSlot.borderRadius && editSlot.borderRadius > 0
+                  ? Math.round((editSlot.borderRadius / 100) * editShort)
+                  : 0;
+                return (
+                  <div className="absolute pointer-events-none" style={{ left: `${x}%`, top: `${y}%`, width: `${w}%`, height: `${h}%`, border: "2px solid oklch(0.65 0.20 145 / 0.8)", zIndex: 26, boxShadow: "0 0 0 1px oklch(0.65 0.20 145 / 0.3)", borderRadius: editRadiusPx > 0 ? `${editRadiusPx}px` : undefined }} />
+                );
+              })()}
             </>
           );
         })()}
@@ -848,6 +858,15 @@ function SlotRenderer({
 }: SlotRendererProps) {
   const hasFill = !!asset;
 
+  // 圆角像素值：基于短边计算，确保四角均匀
+  // slot.borderRadius 是 0~50 的百分比，转换为短边的对应像素值
+  const slotPxW = (slot.w / 100) * canvasW;
+  const slotPxH = (slot.h / 100) * canvasH;
+  const shortSide = Math.min(slotPxW, slotPxH);
+  const radiusPx = slot.borderRadius && slot.borderRadius > 0
+    ? Math.round((slot.borderRadius / 100) * shortSide)
+    : 0;
+
   // 边框颜色：图片调节模式=绿色，选中=蓝色，多选=橙色，空框=虚线蓝
   const outlineStyle = isImageEditMode
     ? "2px solid oklch(0.65 0.20 145)"
@@ -887,8 +906,8 @@ function SlotRenderer({
         // 编辑模式下需要更高 z-index 确保图片显示在其他图框上方
         zIndex: isImageEditMode ? 30 : undefined,
         transition: "box-shadow 0.15s ease, outline 0.15s ease",
-        // 圆角：将百分比转换为相对于图框短边的像素值
-        borderRadius: slot.borderRadius ? `${slot.borderRadius}%` : undefined,
+        // 圆角：基于短边像素值，四角均匀
+        borderRadius: radiusPx > 0 ? `${radiusPx}px` : undefined,
       }}
       onMouseDown={(e) => onMouseDown(e, slot)}
       onDoubleClick={(e) => onDoubleClick(e, slot)}
@@ -904,9 +923,9 @@ function SlotRenderer({
             // overflow:visible 让图片溢出图框外保留
             overflow: "visible",
             // 用 clip-path inset 实现圆角裁剪（不依赖 overflow:hidden）
-            // 编辑模式下不裁剪，让完整图片可见
-            clipPath: slot.borderRadius && slot.borderRadius > 0 && !isImageEditMode
-              ? `inset(0 round ${slot.borderRadius}%)`
+            // 基于短边像素值，四角均匀；编辑模式下不裁剪
+            clipPath: radiusPx > 0 && !isImageEditMode
+              ? `inset(0 round ${radiusPx}px)`
               : undefined,
           }}
         >
