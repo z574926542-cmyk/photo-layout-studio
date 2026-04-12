@@ -68,6 +68,10 @@ export default function StudioCanvas() {
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // 用于原生事件处理器中访问最新状态（避免闭包问题）
+  const slotsRef = useRef(slots);
+  const updateSlotRef = useRef(updateSlot);
+  const imageEditSlotIdRef = useRef<string | null>(null); // 初始化为 null，由 useEffect 同步
   const dragRef = useRef<DragState>({ type: null, startX: 0, startY: 0, currentX: 0, currentY: 0 });
   const [drawingSlot, setDrawingSlot] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const [marquee, setMarquee] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
@@ -90,6 +94,10 @@ export default function StudioCanvas() {
   // ─── 图片调节模式 ─────────────────────────────────────────
   // 当前正在调节图片的图框 ID（null = 未进入图片调节模式）
   const [imageEditSlotId, setImageEditSlotId] = useState<string | null>(null);
+  // 同步 ref，供原生事件处理器访问最新值
+  useEffect(() => { slotsRef.current = slots; }, [slots]);
+  useEffect(() => { updateSlotRef.current = updateSlot; }, [updateSlot]);
+  useEffect(() => { imageEditSlotIdRef.current = imageEditSlotId; }, [imageEditSlotId]);
   // 图片调节拖拽状态（使用 ref 避免闭包问题）
   const imgDragRef = useRef<{
     active: boolean;
@@ -380,24 +388,13 @@ export default function StudioCanvas() {
   );
 
   // ─── 图片调节模式：滚轮缩放（普通）/ 旋转（Shift+滚轮） ────────────────────────
+  // handleSlotWheel 改为原生事件注册（见下方 useEffect）
+  // 保留空函数占位，避免破坏其他传递逻辑
   const handleSlotWheel = useCallback(
-    (e: React.WheelEvent, slot: Slot) => {
-      if (imageEditSlotId !== slot.id) return;
-      e.preventDefault();
-      e.stopPropagation();
-      if (e.shiftKey) {
-        // Shift+滚轮 = 旋转（每格 3°）
-        const delta = e.deltaY > 0 ? 3 : -3;
-        let newRotation = ((slot.rotation ?? 0) + delta + 180) % 360 - 180;
-        updateSlot(slot.id, { rotation: round(newRotation, 1) });
-      } else {
-        // 普通滚轮 = 缩放
-        const delta = e.deltaY > 0 ? -0.05 : 0.05;
-        const newScale = clamp((slot.scale || 1) + delta, 0.1, 5.0);
-        updateSlot(slot.id, { scale: round(newScale, 3) });
-      }
+    (_e: React.WheelEvent, _slot: Slot) => {
+      // 已由原生 addEventListener({ passive: false }) 处理，此处无需操作
     },
-    [imageEditSlotId, updateSlot]
+    []
   );
 
   // ─── 图片缩放手柄事件监听（PS Ctrl+T 等比缩放 + 锚点保持不动） ────────────────────────────────────
@@ -498,7 +495,41 @@ export default function StudioCanvas() {
       window.removeEventListener("mousemove", handleScaleMouseMove);
       window.removeEventListener("mouseup", handleScaleMouseUp);
     };
-  }, [imageEditSlotId, updateSlot]);
+   }, [imageEditSlotId, updateSlot]);
+
+  // ─── 图片编辑模式：原生 wheel 事件（passive:false）───────────────────────────────
+  // React 17+ 把 onWheel 注册为 passive，导致 preventDefault() 无效
+  // 必须用原生 addEventListener({ passive: false }) 才能阻止页面滚动
+  useEffect(() => {
+    if (!imageEditSlotId || !canvasRef.current) return;
+    const canvas = canvasRef.current;
+    // 找到当前编辑的 slot
+    const handleNativeWheel = (e: WheelEvent) => {
+      // 只处理画布内的滚轮事件
+      if (!canvas.contains(e.target as Node)) return;
+      const editId = imageEditSlotIdRef.current;
+      if (!editId) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const slot = slotsRef.current.find((s) => s.id === editId);
+      if (!slot) return;
+      if (e.shiftKey) {
+        // Shift+滚轮 = 旋转（每格 3°）
+        const delta = e.deltaY > 0 ? 3 : -3;
+        const newRotation = ((slot.rotation ?? 0) + delta + 180) % 360 - 180;
+        updateSlotRef.current(editId, { rotation: round(newRotation, 1) });
+      } else {
+        // 普通滚轮 = 缩放（完全自由，无上下限制）
+        const delta = e.deltaY > 0 ? -0.05 : 0.05;
+        const newScale = Math.max(0.01, (slot.scale || 1) + delta);
+        updateSlotRef.current(editId, { scale: round(newScale, 3) });
+      }
+    };
+    canvas.addEventListener('wheel', handleNativeWheel, { passive: false });
+    return () => {
+      canvas.removeEventListener('wheel', handleNativeWheel);
+    };
+  }, [imageEditSlotId]);
 
   // ─── 视口平移事件监听（空格+拖动 / 中键拖动） ─────────────────
   useEffect(() => {
