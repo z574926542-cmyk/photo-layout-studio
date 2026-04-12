@@ -670,7 +670,7 @@ export default function StudioCanvas() {
         ref={canvasRef}
         data-canvas="true"
         className={cn(
-          "relative flex-shrink-0 select-none overflow-hidden",
+          "relative flex-shrink-0 select-none",
           mode === "draw" ? "cursor-crosshair" : "cursor-default"
         )}
         style={{
@@ -882,8 +882,8 @@ function SlotRenderer({
         outline: outlineStyle,
         boxShadow: boxShadowStyle,
         cursor: isImageEditMode ? "grab" : "move",
-        // 编辑模式下 overflow:visible 让图框外的图片可见；普通模式下 overflow:hidden 裁剪显示
-        overflow: isImageEditMode ? "visible" : "hidden",
+        // 溢出部分永远保留（overflow:visible），图片按 cover 比例填满图框，多余部分不裁剪
+        overflow: "visible",
         // 编辑模式下需要更高 z-index 确保图片显示在其他图框上方
         zIndex: isImageEditMode ? 30 : undefined,
         transition: "box-shadow 0.15s ease, outline 0.15s ease",
@@ -901,8 +901,8 @@ function SlotRenderer({
         <div
           className="absolute inset-0"
           style={{
-            // 普通模式：裁剪显示；编辑模式：不裁剪，让图片完整可见
-            overflow: isImageEditMode ? "visible" : "hidden",
+            // 溢出部分永远保留，不裁剪
+            overflow: "visible",
             borderRadius: slot.borderRadius ? `${slot.borderRadius}%` : undefined,
           }}
         >
@@ -1125,33 +1125,57 @@ function AspectFillImage({
     ? (asset.cropRect?.height ?? asset.naturalHeight)
     : asset.naturalHeight;
 
-  // 计算 cover 模式下图片的渲染尺寸（确保完全覆盖图框）
+  // 编辑模式下：显示图片边界提示框
+  const editBorderStyle = isEditMode ? {
+    outline: "1px dashed oklch(0.65 0.20 145 / 0.6)",
+    outlineOffset: 2,
+  } : {};
+
+  // 若尺寸无效（未加载完成或为0），回退到 CSS object-fit:cover 方案，避免畸变
+  if (!imgW || !imgH || imgW <= 0 || imgH <= 0) {
+    return (
+      <img
+        src={displayUrl}
+        alt={asset.name}
+        draggable={false}
+        style={{
+          position: "absolute",
+          inset: 0,
+          width: "100%",
+          height: "100%",
+          objectFit: "cover",
+          objectPosition: "center",
+          transform: `scale(${scale}) rotate(${rotation}deg)`,
+          transformOrigin: "center center",
+          userSelect: "none",
+          pointerEvents: "none",
+          ...editBorderStyle,
+        }}
+      />
+    );
+  }
+
+  // 计算 cover 模式下图片的渲染尺寸（确保完全覆盖图框，保持原始比例）
   const imgAR = imgW / imgH;
   const slotAR = slotPxW / slotPxH;
   let renderW: number, renderH: number;
   if (imgAR > slotAR) {
-    // 图片更宽：以高度为基准
+    // 图片更宽（横向）：以高度为基准，宽度溢出
     renderH = slotPxH;
     renderW = slotPxH * imgAR;
   } else {
-    // 图片更高：以宽度为基准
+    // 图片更高（纵向）：以宽度为基准，高度溢出
     renderW = slotPxW;
     renderH = slotPxW / imgAR;
   }
 
-  // 图片左上角偏移（相对于图框）：中居
+  // 图片左上角偏移（相对于图框）：默认居中
   const baseLeft = (slotPxW - renderW) / 2;
   const baseTop = (slotPxH - renderH) / 2;
 
   // 应用用户偏移（offsetX/offsetY 是相对于图框尺寸的百分比）
   const userOffX = (offsetX / 100) * slotPxW;
   const userOffY = (offsetY / 100) * slotPxH;
-
-  // 编辑模式下：显示图片边界提示框
-  const editBorderStyle = isEditMode ? {
-    outline: "1px dashed oklch(0.65 0.20 145 / 0.6)",
-    outlineOffset: 2,
-  } : {};
 
   return (
     <img
@@ -1160,7 +1184,7 @@ function AspectFillImage({
       draggable={false}
       style={{
         position: "absolute",
-        // 使用计算出的真实 cover 尺寸（像素值）
+        // 使用计算出的真实 cover 尺寸（像素值），保持原始比例
         width: renderW,
         height: renderH,
         // 居中 + 用户偏移
