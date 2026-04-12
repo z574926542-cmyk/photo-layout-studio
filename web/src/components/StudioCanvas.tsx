@@ -406,80 +406,77 @@ export default function StudioCanvas() {
       const sd = imgScaleDragRef.current;
       if (!sd.active || sd.slotId !== imageEditSlotId) return;
 
-      const dx = (e.clientX - sd.startClientX) / sd.slotPxW * 100; // 屏幕像素差转为图框百分比
+      // 屏幕像素差转为图框百分比
+      const dx = (e.clientX - sd.startClientX) / sd.slotPxW * 100;
       const dy = (e.clientY - sd.startClientY) / sd.slotPxH * 100;
       const h = sd.handle;
 
-      // 根据手柄方向，计算拖拽边在图框百分比坐标系中的新位置
-      // 拖拽边 = 图片对应边缘的新位置
-      // 对边（锚点）保持不动
-
-      // 图片初始尺寸（图框百分比）
+      // 图片初始尺寸和位置（图框百分比）
       const initW = sd.initRenderW / sd.slotPxW * 100;
       const initH = sd.initRenderH / sd.slotPxH * 100;
-
-      // 图片初始边缘（图框百分比）
       const initLeft = sd.initImgLeft / sd.slotPxW * 100;
       const initTop  = sd.initImgTop  / sd.slotPxH * 100;
 
-      // 根据手柄计算拖动边的新位置
+      // 所有手柄均等比缩放（保持图片原始宽高比）
+      // 以拖动方向的变化量为基准计算等比缩放因子
+      let scaleFactor = 1;
+      if (h === "e") {
+        scaleFactor = (initW + dx) / initW;
+      } else if (h === "w") {
+        scaleFactor = (initW - dx) / initW;
+      } else if (h === "s") {
+        scaleFactor = (initH + dy) / initH;
+      } else if (h === "n") {
+        scaleFactor = (initH - dy) / initH;
+      } else if (h === "se") {
+        scaleFactor = ((initW + dx) / initW + (initH + dy) / initH) / 2;
+      } else if (h === "sw") {
+        scaleFactor = ((initW - dx) / initW + (initH + dy) / initH) / 2;
+      } else if (h === "ne") {
+        scaleFactor = ((initW + dx) / initW + (initH - dy) / initH) / 2;
+      } else if (h === "nw") {
+        scaleFactor = ((initW - dx) / initW + (initH - dy) / initH) / 2;
+      }
+
+      // 限制最小缩放因子（图片至少 5% 图框大小）
+      const minFactor = 5 / Math.max(initW, initH);
+      scaleFactor = Math.max(minFactor, scaleFactor);
+
+      const newW = initW * scaleFactor;
+      const newH = initH * scaleFactor;
+
+      // 根据手柄方向确定锚点，计算新的图片左上角位置
       let newLeft = initLeft;
       let newTop  = initTop;
-      let newW    = initW;
-      let newH    = initH;
 
+      // 水平方向锚点
       if (h === "e" || h === "ne" || h === "se") {
-        // 拖动右边：右边移动，左边不动
-        newW = initW + dx;
+        newLeft = initLeft; // 左边固定
       } else if (h === "w" || h === "nw" || h === "sw") {
-        // 拖动左边：左边移动，右边不动
-        newLeft = initLeft + dx;
-        newW = initW - dx;
+        newLeft = initLeft + initW - newW; // 右边固定
+      } else {
+        newLeft = initLeft + (initW - newW) / 2; // 上下边手柄：水平中心固定
       }
+
+      // 垂直方向锚点
       if (h === "s" || h === "se" || h === "sw") {
-        // 拖动下边：下边移动，上边不动
-        newH = initH + dy;
+        newTop = initTop; // 上边固定
       } else if (h === "n" || h === "ne" || h === "nw") {
-        // 拖动上边：上边移动，下边不动
-        newTop = initTop + dy;
-        newH = initH - dy;
+        newTop = initTop + initH - newH; // 下边固定
+      } else {
+        newTop = initTop + (initH - newH) / 2; // 左右边手柄：垂直中心固定
       }
 
-      // 对角手柄：等比缩放（以宽高变化平均值为准）
-      if (h === "nw" || h === "ne" || h === "sw" || h === "se") {
-        const scaleFactorW = newW / initW;
-        const scaleFactorH = newH / initH;
-        // 取平均等比缩放因子
-        const scaleFactor = (scaleFactorW + scaleFactorH) / 2;
-        const uniformNewW = initW * scaleFactor;
-        const uniformNewH = initH * scaleFactor;
-        // 根据手柄重新计算左上角（保持锚点不动）
-        if (h === "se") { newLeft = initLeft; newTop = initTop; }
-        else if (h === "sw") { newLeft = initLeft + initW - uniformNewW; newTop = initTop; }
-        else if (h === "ne") { newLeft = initLeft; newTop = initTop + initH - uniformNewH; }
-        else if (h === "nw") { newLeft = initLeft + initW - uniformNewW; newTop = initTop + initH - uniformNewH; }
-        newW = uniformNewW;
-        newH = uniformNewH;
-      }
+      // 从新的图片宽度反推 userScale
+      // renderW = imgW * baseScale * userScale
+      // imgW * baseScale = initRenderW / initScale（不变量）
+      const imgBaseW = (sd.initRenderW / sd.slotPxW * 100) / sd.initScale;
+      const newScale = clamp(newW / imgBaseW, 0.05, 10.0);
 
-      // 限制最小尺寸：至少 5% 图框宽/高
-      if (newW < 5 || newH < 5) return;
-
-      // 从新的图片尺寸反推 scale 和 offsetX/offsetY
-      // renderW = imgW * baseScale * scale => scale = renderW / (imgW * baseScale)
-      // imgW * baseScale = initRenderW / initScale
-      const initRenderWPct = sd.initRenderW / sd.slotPxW * 100;
-      const imgBaseW = initRenderWPct / sd.initScale; // imgW * baseScale / slotW * 100
-      const newScale = clamp(newW / imgBaseW, 0.1, 5.0);
-
-      // 新的 offsetX/offsetY：从图片左上角位置反推
-      // imgCenterX = slotW/2 + offsetX/100 * slotW
-      // imgLeft = imgCenterX - renderW/2
-      // => offsetX = (imgLeft + renderW/2 - slotW/2) / slotW * 100
-      const newImgCenterX = newLeft + newW / 2;
-      const newImgCenterY = newTop + newH / 2;
-      const newOffsetX = (newImgCenterX - 50); // 百分比，相对图框宽度
-      const newOffsetY = (newImgCenterY - 50); // 百分比，相对图框高度
+      // 从图片中心位置反推 offsetX/offsetY
+      // offsetX = imgCenterX - 50（图框百分比）
+      const newOffsetX = (newLeft + newW / 2) - 50;
+      const newOffsetY = (newTop  + newH / 2) - 50;
 
       updateSlot(sd.slotId, {
         scale: round(newScale, 4),
