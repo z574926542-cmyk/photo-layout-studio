@@ -402,6 +402,7 @@ export default function StudioCanvas() {
     if (!imageEditSlotId) return;
     const handleScaleMouseMove = (e: MouseEvent) => {
       const sd = imgScaleDragRef.current;
+      console.log('[ScaleMove] active:', sd.active, 'slotId:', sd.slotId, 'editId:', imageEditSlotId);
       if (!sd.active || sd.slotId !== imageEditSlotId) return;
 
       // 屏幕像素增量（initRenderW/H 也是屏幕像素，坐标系一致）
@@ -585,6 +586,7 @@ export default function StudioCanvas() {
       if (e.button !== 0) return;
       e.stopPropagation();
       e.preventDefault();
+      console.log('[ImgScaleDown] handle:', handle, 'clientX:', e.clientX, 'clientY:', e.clientY, 'imgRect:', JSON.stringify(imgRect));
       const slotPxW = (slot.w / 100) * displayW;
       const slotPxH = (slot.h / 100) * displayH;
       imgScaleDragRef.current = {
