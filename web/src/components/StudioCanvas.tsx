@@ -901,8 +901,8 @@ function SlotRenderer({
         outline: outlineStyle,
         boxShadow: boxShadowStyle,
         cursor: isImageEditMode ? "grab" : "move",
-        // 溢出部分永远保留（overflow:visible），图片按 cover 比例填满图框，多余部分不裁剪
-        overflow: "visible",
+        // 正常模式 overflow:hidden 裁剪；编辑模式 overflow:visible 显示完整图片
+        overflow: isImageEditMode ? "visible" : "hidden",
         // 编辑模式下需要更高 z-index 确保图片显示在其他图框上方
         zIndex: isImageEditMode ? 30 : undefined,
         transition: "box-shadow 0.15s ease, outline 0.15s ease",
@@ -920,10 +920,9 @@ function SlotRenderer({
         <div
           className="absolute inset-0"
           style={{
-            // overflow:visible 让图片溢出图框外保留
-            overflow: "visible",
-            // 用 clip-path inset 实现圆角裁剪（不依赖 overflow:hidden）
-            // 基于短边像素值，四角均匀；编辑模式下不裁剪
+            // 正常模式 overflow:hidden 配合外层裁剪；编辑模式 overflow:visible
+            overflow: isImageEditMode ? "visible" : "hidden",
+            // clip-path 圆角：编辑模式下取消，方便看完整图片
             clipPath: radiusPx > 0 && !isImageEditMode
               ? `inset(0 round ${radiusPx}px)`
               : undefined,
