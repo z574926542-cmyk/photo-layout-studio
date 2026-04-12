@@ -706,8 +706,8 @@ export default function StudioCanvas() {
             isMultiSelected={selectedSlotIds.includes(slot.id)}
             isImageEditMode={imageEditSlotId === slot.id}
             zoom={zoom}
-            canvasW={canvas.width}
-            canvasH={canvas.height}
+            canvasW={displayW}
+            canvasH={displayH}
             onMouseDown={handleSlotMouseDown}
             onDoubleClick={handleSlotDoubleClick}
             onWheel={handleSlotWheel}
@@ -781,8 +781,8 @@ export default function StudioCanvas() {
               {(x + w) < 100 && <div className="absolute pointer-events-none" style={{ left: `${x + w}%`, top: `${y}%`, width: `${100 - x - w}%`, height: `${h}%`, background: "oklch(0 0 0 / 0.45)", zIndex: 25 }} />}
               {/* 图框边界轮廓线 */}
               {(() => {
-                const editPxW = (w / 100) * canvas.width;
-                const editPxH = (h / 100) * canvas.height;
+                const editPxW = (w / 100) * displayW;
+                const editPxH = (h / 100) * displayH;
                 const editShort = Math.min(editPxW, editPxH);
                 const editRadiusPx = editSlot.borderRadius && editSlot.borderRadius > 0
                   ? Math.round((editSlot.borderRadius / 100) * editShort)
