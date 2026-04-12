@@ -1138,17 +1138,16 @@ function AspectFillImage({
   const scale = slot.scale ?? 1;
   const rotation = slot.rotation ?? 0;
 
-  // 图框像素尺寸
-  const slotPxW = (slot.w / 100) * canvasW;
-  const slotPxH = (slot.h / 100) * canvasH;
+  // 用 useState 动态读取图片实际尺寸，避免 asset.naturalWidth 为 0 的问题
+  const [imgNaturalSize, setImgNaturalSize] = React.useState<{w: number; h: number} | null>(null);
 
-  // 图片像素尺寸（优先用裁剪后的尺寸）
-  const imgW = asset.croppedDataUrl
+  // 图片原始尺寸：优先用动态加载结果，其次用 asset 存储的尺寸
+  const imgW = imgNaturalSize?.w ?? (asset.croppedDataUrl
     ? (asset.cropRect?.width ?? asset.naturalWidth)
-    : asset.naturalWidth;
-  const imgH = asset.croppedDataUrl
+    : asset.naturalWidth);
+  const imgH = imgNaturalSize?.h ?? (asset.croppedDataUrl
     ? (asset.cropRect?.height ?? asset.naturalHeight)
-    : asset.naturalHeight;
+    : asset.naturalHeight);
 
   // 编辑模式下：显示图片边界提示框
   const editBorderStyle = isEditMode ? {
@@ -1156,7 +1155,7 @@ function AspectFillImage({
     outlineOffset: 2,
   } : {};
 
-  // 若尺寸无效（未加载完成或为0），回退到 CSS object-fit:cover 方案，避免畸变
+  // 若尺寸无效（未加载完成或为0），回退到 CSS object-fit:cover 方案
   if (!imgW || !imgH || imgW <= 0 || imgH <= 0) {
     return (
       <img
@@ -1180,41 +1179,48 @@ function AspectFillImage({
     );
   }
 
-  // 计算 cover 模式下图片的渲染尺寸（确保完全覆盖图框，保持原始比例）
+  // 图框的实际 DOM 尺寸由 CSS 百分比决定，不依赖外部传入的 canvasW/canvasH
+  // 用 slot.w/slot.h 的实际像素尺寸进行 cover 计算，需要用 useRef + getBoundingClientRect
+  // 但为简化，改用纯 CSS 方案：
+  // 利用 padding-top trick 或者直接用 CSS aspect-ratio + object-fit:cover
+  // 最可靠的方案：用 imgAR 和 slot 的实际尺寸比较，用百分比定位
   const imgAR = imgW / imgH;
-  const slotAR = slotPxW / slotPxH;
-  let renderW: number, renderH: number;
+  const slotAR = (slot.w * canvasW) / (slot.h * canvasH); // 图框纵横比
+
+  // cover 尺寸：以百分比表示（相对于图框宽高）
+  let renderWPct: number, renderHPct: number;
   if (imgAR > slotAR) {
-    // 图片更宽（横向）：以高度为基准，宽度溢出
-    renderH = slotPxH;
-    renderW = slotPxH * imgAR;
+    // 图片更宽：以高度为基准，宽度溢出
+    renderHPct = 100;
+    renderWPct = (imgAR / slotAR) * 100;
   } else {
-    // 图片更高（纵向）：以宽度为基准，高度溢出
-    renderW = slotPxW;
-    renderH = slotPxW / imgAR;
+    // 图片更高：以宽度为基准，高度溢出
+    renderWPct = 100;
+    renderHPct = (slotAR / imgAR) * 100;
   }
 
-  // 图片左上角偏移（相对于图框）：默认居中
-  const baseLeft = (slotPxW - renderW) / 2;
-  const baseTop = (slotPxH - renderH) / 2;
-
-  // 应用用户偏移（offsetX/offsetY 是相对于图框尺寸的百分比）
-  const userOffX = (offsetX / 100) * slotPxW;
-  const userOffY = (offsetY / 100) * slotPxH;
+  // 居中偏移（百分比）
+  const baseLeftPct = (100 - renderWPct) / 2;
+  const baseTopPct = (100 - renderHPct) / 2;
 
   return (
     <img
       src={displayUrl}
       alt={asset.name}
       draggable={false}
+      onLoad={(e) => {
+        const img = e.currentTarget;
+        if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+          setImgNaturalSize({ w: img.naturalWidth, h: img.naturalHeight });
+        }
+      }}
       style={{
         position: "absolute",
-        // 使用计算出的真实 cover 尺寸（像素值），保持原始比例
-        width: renderW,
-        height: renderH,
-        // 居中 + 用户偏移
-        left: baseLeft + userOffX,
-        top: baseTop + userOffY,
+        // 用百分比定位，完全跟随图框 DOM 实际尺寸，不受 canvasW/canvasH 误差影响
+        width: `${renderWPct}%`,
+        height: `${renderHPct}%`,
+        left: `${baseLeftPct + offsetX}%`,
+        top: `${baseTopPct + offsetY}%`,
         // 应用缩放和旋转（以图片自身中心为原点）
         transform: `scale(${scale}) rotate(${rotation}deg)`,
         transformOrigin: "center center",
