@@ -130,7 +130,8 @@ export default function StudioCanvas() {
     anchorImgY: number;   // 锚点在图片坐标系中的 Y（0=上边，1=下边）
     anchorSlotX: number;  // 锚点相对图框的像素 X（拖拽时保持不动）
     anchorSlotY: number;  // 锚点相对图框的像素 Y（拖拽时保持不动）
-  }>({ active: false, slotId: "", handle: "se", startClientX: 0, startClientY: 0, initScale: 1, initOffsetX: 0, initOffsetY: 0, slotPxW: 0, slotPxH: 0, initImgLeft: 0, initImgTop: 0, initRenderW: 0, initRenderH: 0, baseScale: 1, anchorImgX: 0, anchorImgY: 0, anchorSlotX: 0, anchorSlotY: 0 });
+    zoom: number;         // 拖拽开始时的画布缩放比例（用于屏幕像素转换为画布像素）
+  }>({ active: false, slotId: "", handle: "se", startClientX: 0, startClientY: 0, initScale: 1, initOffsetX: 0, initOffsetY: 0, slotPxW: 0, slotPxH: 0, initImgLeft: 0, initImgTop: 0, initRenderW: 0, initRenderH: 0, baseScale: 1, anchorImgX: 0, anchorImgY: 0, anchorSlotX: 0, anchorSlotY: 0, zoom: 1 });
 
   // ─── 视口平移状态（空格+拖动 / 中键拖动） ─────────────────
   const [isPanning, setIsPanning] = useState(false);
@@ -406,9 +407,9 @@ export default function StudioCanvas() {
       const sd = imgScaleDragRef.current;
       if (!sd.active || sd.slotId !== imageEditSlotId) return;
 
-      // 屏幕像素增量（从拖动开始到当前位置的累积增量）
-      const dx = e.clientX - sd.startClientX;  // 像素
-      const dy = e.clientY - sd.startClientY;  // 像素
+      // 屏幕像素增量转换为画布像素（除以 zoom，因为 initRenderW/H 是画布像素）
+      const dx = (e.clientX - sd.startClientX) / sd.zoom;
+      const dy = (e.clientY - sd.startClientY) / sd.zoom;
       const h = sd.handle;
 
       // 图片初始尺寸（像素）和初始位置（像素，相对图框左上角）
@@ -575,9 +576,10 @@ export default function StudioCanvas() {
         anchorImgY: 0,
         anchorSlotX: 0,
         anchorSlotY: 0,
+        zoom,
       };
     },
-    [displayW, displayH]
+    [displayW, displayH, zoom]
   );
 
   // ─── 旋转手柄鼠标按下 ────────────────────────────────
