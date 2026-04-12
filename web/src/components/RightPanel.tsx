@@ -233,6 +233,13 @@ export default function RightPanel() {
     };
   }, [getIntersectingAssets]);
 
+  // ─── 双击空白区域打开文件选择器（类似 PS 双击空白处导入文件） ────────────────
+  const handleGridDoubleClick = (e: React.MouseEvent) => {
+    // 只在双击空白区域时触发（不是双击卡片）
+    if ((e.target as HTMLElement).closest("[data-item]")) return;
+    fileInputRef.current?.click();
+  };
+
   const handleGridMouseDown = (e: React.MouseEvent) => {
     // 只在直接点击空白区域时触发框选（不是点击卡片）
     if ((e.target as HTMLElement).closest("[data-item]")) return;
@@ -544,6 +551,7 @@ export default function RightPanel() {
           ref={gridRef}
           className="flex-1 overflow-y-auto p-2 relative select-none"
           onMouseDown={handleGridMouseDown}
+          onDoubleClick={handleGridDoubleClick}
           onDrop={handleDrop}
           onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
           onDragLeave={() => setIsDragOver(false)}

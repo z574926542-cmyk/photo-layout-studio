@@ -109,6 +109,29 @@ export default function StudioCanvas() {
     initRotation: number; // 开始时的旋转角度
   }>({ active: false, slotId: "", centerX: 0, centerY: 0, startAngle: 0, initRotation: 0 });
 
+  // ─── 图片缩放手柄拖拽状态 ─────────────────────────────────
+  const imgScaleDragRef = useRef<{
+    active: boolean;
+    slotId: string;
+    handle: ResizeHandle;
+    startClientX: number;
+    startClientY: number;
+    initScale: number;
+    slotPxW: number; // 图框屏幕宽度（用于计算拖拽量）
+    slotPxH: number;
+  }>({ active: false, slotId: "", handle: "se", startClientX: 0, startClientY: 0, initScale: 1, slotPxW: 0, slotPxH: 0 });
+
+  // ─── 视口平移状态（空格+拖动 / 中键拖动） ─────────────────
+  const [isPanning, setIsPanning] = useState(false);
+  const [isSpaceDown, setIsSpaceDown] = useState(false);
+  const panDragRef = useRef<{
+    active: boolean;
+    startClientX: number;
+    startClientY: number;
+    initScrollLeft: number;
+    initScrollTop: number;
+  }>({ active: false, startClientX: 0, startClientY: 0, initScrollLeft: 0, initScrollTop: 0 });
+
   // 画布显示尺寸
   const displayW = canvas.width * zoom;
   const displayH = canvas.height * zoom;
@@ -228,6 +251,8 @@ export default function StudioCanvas() {
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
       if (e.button !== 0) return;
+      // 空格键按下时，由 scrollRef 的 onMouseDown 处理平移，画布不响应其他操作
+      if (isSpaceDown) return;
       // 点击画布空白区域退出图片调节模式
       if (imageEditSlotId) {
         exitImageEdit();
@@ -265,7 +290,7 @@ export default function StudioCanvas() {
         }
       }
     },
-    [mode, getCanvasPct, selectSlot, selectSlots, imageEditSlotId, exitImageEdit]
+    [mode, getCanvasPct, selectSlot, selectSlots, imageEditSlotId, exitImageEdit, isSpaceDown]
   );
 
   // ─── 图框鼠标按下（选择/移动/图片调节） ──────────────────
@@ -363,7 +388,113 @@ export default function StudioCanvas() {
     [imageEditSlotId, updateSlot]
   );
 
-  // ─── 旋转手柄鼠标按下 ──────────────────────────────────────────────
+  // ─── 图片缩放手柄事件监听 ────────────────────────────────────
+  useEffect(() => {
+    if (!imageEditSlotId) return;
+    const handleScaleMouseMove = (e: MouseEvent) => {
+      const sd = imgScaleDragRef.current;
+      if (!sd.active || sd.slotId !== imageEditSlotId) return;
+      // 根据拖拽手柄方向计算缩放量
+      const dx = e.clientX - sd.startClientX;
+      const dy = e.clientY - sd.startClientY;
+      const h = sd.handle;
+      // 对角手柄：取 dx/dy 中较大的那个方向（等比缩放）
+      // 边手柄：只取对应方向
+      let delta = 0;
+      if (h === "nw" || h === "sw") delta = (-dx) / sd.slotPxW;
+      else if (h === "ne" || h === "se") delta = dx / sd.slotPxW;
+      else if (h === "n") delta = (-dy) / sd.slotPxH;
+      else if (h === "s") delta = dy / sd.slotPxH;
+      else if (h === "w") delta = (-dx) / sd.slotPxW;
+      else if (h === "e") delta = dx / sd.slotPxW;
+      // 对角手柄取对角方向平均
+      if (h === "nw" || h === "se") delta = ((-dx) / sd.slotPxW + (-dy) / sd.slotPxH) / 2;
+      if (h === "ne" || h === "sw") delta = (dx / sd.slotPxW + (-dy) / sd.slotPxH) / 2;
+      const newScale = clamp(sd.initScale + delta * 2, 0.1, 5.0);
+      updateSlot(sd.slotId, { scale: round(newScale, 3) });
+    };
+    const handleScaleMouseUp = () => {
+      imgScaleDragRef.current.active = false;
+    };
+    window.addEventListener("mousemove", handleScaleMouseMove);
+    window.addEventListener("mouseup", handleScaleMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", handleScaleMouseMove);
+      window.removeEventListener("mouseup", handleScaleMouseUp);
+    };
+  }, [imageEditSlotId, updateSlot]);
+
+  // ─── 视口平移事件监听（空格+拖动 / 中键拖动） ─────────────────
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code === "Space" && !e.repeat && !(e.target instanceof HTMLInputElement) && !(e.target instanceof HTMLTextAreaElement)) {
+        e.preventDefault();
+        setIsSpaceDown(true);
+      }
+    };
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.code === "Space") {
+        setIsSpaceDown(false);
+        if (panDragRef.current.active) {
+          panDragRef.current.active = false;
+          setIsPanning(false);
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+    };
+  }, []);
+
+  useEffect(() => {
+    const handlePanMouseMove = (e: MouseEvent) => {
+      if (!panDragRef.current.active) return;
+      const scroll = scrollRef.current;
+      if (!scroll) return;
+      const dx = e.clientX - panDragRef.current.startClientX;
+      const dy = e.clientY - panDragRef.current.startClientY;
+      scroll.scrollLeft = panDragRef.current.initScrollLeft - dx;
+      scroll.scrollTop = panDragRef.current.initScrollTop - dy;
+    };
+    const handlePanMouseUp = () => {
+      if (panDragRef.current.active) {
+        panDragRef.current.active = false;
+        setIsPanning(false);
+      }
+    };
+    window.addEventListener("mousemove", handlePanMouseMove);
+    window.addEventListener("mouseup", handlePanMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", handlePanMouseMove);
+      window.removeEventListener("mouseup", handlePanMouseUp);
+    };
+  }, []);
+  // ─── 图片缩放手柄鼠标按下（图片编辑模式下） ─────────────────────────
+  const handleImgScaleMouseDown = useCallback(
+    (e: React.MouseEvent, slot: Slot, handle: ResizeHandle) => {
+      if (e.button !== 0) return;
+      e.stopPropagation();
+      e.preventDefault();
+      const slotPxW = (slot.w / 100) * displayW;
+      const slotPxH = (slot.h / 100) * displayH;
+      imgScaleDragRef.current = {
+        active: true,
+        slotId: slot.id,
+        handle,
+        startClientX: e.clientX,
+        startClientY: e.clientY,
+        initScale: slot.scale ?? 1,
+        slotPxW,
+        slotPxH,
+      };
+    },
+    [displayW, displayH]
+  );
+
+  // ─── 旋转手柄鼠标按下 ────────────────────────────────
   const handleRotateMouseDown = useCallback(
     (e: React.MouseEvent, slot: Slot) => {
       if (e.button !== 0) return;
@@ -388,8 +519,7 @@ export default function StudioCanvas() {
     },
     []
   );
-
-  // ─── 缩放手柄鼠标按下 ───────────────────────────────────────────────
+  // ─── 缩放手柄鼠标按下 ──────────────────────────────────────
   const handleResizeMouseDown = useCallback(
     (e: React.MouseEvent, slot: Slot, handle: ResizeHandle) => {
       if (e.button !== 0) return;
@@ -653,8 +783,25 @@ export default function StudioCanvas() {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
+        cursor: isPanning ? "grabbing" : isSpaceDown ? "grab" : undefined,
       }}
       onWheel={handleWheel}
+      onMouseDown={(e) => {
+        // 空格+左键或中键拖动：平移视口
+        if ((isSpaceDown && e.button === 0) || e.button === 1) {
+          e.preventDefault();
+          const scroll = scrollRef.current;
+          if (!scroll) return;
+          panDragRef.current = {
+            active: true,
+            startClientX: e.clientX,
+            startClientY: e.clientY,
+            initScrollLeft: scroll.scrollLeft,
+            initScrollTop: scroll.scrollTop,
+          };
+          setIsPanning(true);
+        }
+      }}
     >
       {/* 内层 wrapper：minWidth/minHeight 确保画布比容器大时可以滚动，小时 flex 自动居中 */}
       <div
@@ -717,6 +864,7 @@ export default function StudioCanvas() {
             onWheel={handleSlotWheel}
             onResizeMouseDown={handleResizeMouseDown}
             onRotateMouseDown={handleRotateMouseDown}
+            onImgScaleMouseDown={handleImgScaleMouseDown}
             onDrop={handleSlotDrop}
             onDragOver={handleSlotDragOver}
             onUnfill={() => unfillSlot(slot.id)}
@@ -851,7 +999,7 @@ export default function StudioCanvas() {
               whiteSpace: "nowrap",
             }}
           >
-            图片调节模式 · 拖动平移 · 滚轮缩放 · Esc 退出
+            图片调节模式 · 拖动平移 · 橙色手柄缩放 · 滚轮缩放 · Shift+滚轮旋转 · Esc 退出
           </div>
         )}
       </div>
@@ -874,6 +1022,7 @@ interface SlotRendererProps {
   onWheel: (e: React.WheelEvent, slot: Slot) => void;
   onResizeMouseDown: (e: React.MouseEvent, slot: Slot, handle: ResizeHandle) => void;
   onRotateMouseDown: (e: React.MouseEvent, slot: Slot) => void;
+  onImgScaleMouseDown: (e: React.MouseEvent, slot: Slot, handle: ResizeHandle) => void;
   onDrop: (e: React.DragEvent, slotId: string) => void;
   onDragOver: (e: React.DragEvent) => void;
   onUnfill: () => void;
@@ -893,6 +1042,7 @@ function SlotRenderer({
   onWheel,
   onResizeMouseDown,
   onRotateMouseDown,
+  onImgScaleMouseDown,
   onDrop,
   onDragOver,
   onUnfill,
@@ -1050,6 +1200,25 @@ function SlotRenderer({
             onMouseDown={(e) => onResizeMouseDown(e, slot, handle)}
           />
         ))}
+
+      {/* 图片调节模式：图片缩放手柄（图框四角和四边，橙色） */}
+      {isImageEditMode && asset && RESIZE_HANDLES.map((handle) => (
+        <div
+          key={`img-scale-${handle}`}
+          className="absolute z-50"
+          style={{
+            ...getHandleStyle(handle),
+            width: 10,
+            height: 10,
+            backgroundColor: "oklch(0.72 0.20 55)",  // 橙色，与图框蓝色区分
+            border: "1.5px solid white",
+            borderRadius: 2,
+            boxShadow: "0 0 0 1px oklch(0.72 0.20 55 / 0.5)",
+          }}
+          onMouseDown={(e) => { e.stopPropagation(); onImgScaleMouseDown(e, slot, handle); }}
+          title="拖动缩放图片"
+        />
+      ))}
 
       {/* 图片调节模式：旋转手柄（图框四角外侧） */}
       {isImageEditMode && asset && (
