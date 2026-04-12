@@ -738,14 +738,13 @@ export default function RightPanel() {
                       </div>
                     )}
 
-                    {/* 悬停操作菜单 - 鼠标靠近时在图片右侧弹出竖列按鈕 */}
+                    {/* 悬停操作按鈕 - 图片内部右下角覆盖，hover 时显示 */}
                     {!isSelected && (
                       <div
-                        className="absolute opacity-0 group-hover:opacity-100 transition-all duration-150 flex flex-col gap-1"
+                        className="absolute opacity-0 group-hover:opacity-100 transition-all duration-150 flex flex-col gap-0.5"
                         style={{
-                          top: "50%",
-                          left: "calc(100% + 5px)",
-                          transform: "translateY(-50%)",
+                          bottom: 4,
+                          right: 4,
                           zIndex: 50,
                         }}
                         onClick={(e) => e.stopPropagation()}
