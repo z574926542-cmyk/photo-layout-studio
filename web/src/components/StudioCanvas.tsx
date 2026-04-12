@@ -901,9 +901,13 @@ function SlotRenderer({
         <div
           className="absolute inset-0"
           style={{
-            // 溢出部分永远保留，不裁剪
+            // overflow:visible 让图片溢出图框外保留
             overflow: "visible",
-            borderRadius: slot.borderRadius ? `${slot.borderRadius}%` : undefined,
+            // 用 clip-path inset 实现圆角裁剪（不依赖 overflow:hidden）
+            // 编辑模式下不裁剪，让完整图片可见
+            clipPath: slot.borderRadius && slot.borderRadius > 0 && !isImageEditMode
+              ? `inset(0 round ${slot.borderRadius}%)`
+              : undefined,
           }}
         >
           <AspectFillImage asset={asset} slot={slot} canvasW={canvasW} canvasH={canvasH} isEditMode={isImageEditMode} />

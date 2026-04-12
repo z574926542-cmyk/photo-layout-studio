@@ -108,8 +108,10 @@ type Action =
   | { type: "SELECT_OVERLAY"; id: string | null }
   | { type: "SET_OVERLAYS"; overlays: OverlayItem[] }
   | { type: "REORDER_OVERLAY"; id: string; direction: "up" | "down" | "top" | "bottom" }
-  // ─── 批量填充选中素材 ──────────────────────────────────────
-  | { type: "BATCH_FILL_SELECTED"; assetIds: string[] };
+    // ─── 批量填充选中素材 ──────────────────────────
+  | { type: "BATCH_FILL_SELECTED"; assetIds: string[] }
+  // ─── 将单张图片填入全部图框 ──────────────────────
+  | { type: "FILL_ALL_SLOTS"; assetId: string };
 
 // ─── Initial State ────────────────────────────────────────
 const DEFAULT_CANVAS: CanvasConfig = {
@@ -601,6 +603,20 @@ function reducer(state: StudioState, action: Action): StudioState {
       return pushHistory({ ...state, slots: newSlots });
     }
 
+    case "FILL_ALL_SLOTS": {
+      // 将单张图片填入全部图框（每个图框都填入同一张图片）
+      if (state.slots.length === 0) return state;
+      const newSlots = state.slots.map((s) => ({
+        ...s,
+        assetId: action.assetId,
+        offsetX: 0,
+        offsetY: 0,
+        scale: 1,
+        rotation: 0,
+      }));
+      return pushHistory({ ...state, slots: newSlots });
+    }
+
     default:
       return state;
   }
@@ -693,6 +709,8 @@ export interface StudioContextValue {  state: StudioState;
   selectedOverlay: OverlayItem | null;
   /** 将选中的多张素材按顺序填入空图框 */
   batchFillSelected: (assetIds: string[]) => void;
+  /** 将单张图片填入全部图框（每个图框都填入同一张） */
+  fillAllSlots: (assetId: string) => void;
 }
 
 const StudioContext = createContext<StudioContextValue | null>(null);
@@ -796,6 +814,11 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     if (assetIds.length === 0) return;
     dispatch({ type: "BATCH_FILL_SELECTED", assetIds });
     toast.success(`已将 ${assetIds.length} 张照片填入图框`);
+  }, []);
+
+  const fillAllSlots = useCallback((assetId: string) => {
+    dispatch({ type: "FILL_ALL_SLOTS", assetId });
+    toast.success("已将该图片填入全部图框");
   }, []);
   const duplicateSlot = useCallback((id: string) => {
     dispatch({ type: "DUPLICATE_SLOT", id });
@@ -1159,6 +1182,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     reorderOverlay,
     selectedOverlay,
     batchFillSelected,
+    fillAllSlots,
   };
 
   return (

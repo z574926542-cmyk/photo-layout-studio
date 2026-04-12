@@ -53,6 +53,7 @@ export default function RightPanel() {
     updateSlot,
     addOverlayFromDataUrl,
     batchFillSelected,
+    fillAllSlots,
   } = useStudio();
   const { assets, slots, selectedSlotId } = state;
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -759,6 +760,25 @@ export default function RightPanel() {
                           style={{ background: selectedSlotId ? "oklch(0.58 0.22 264)" : "oklch(0.58 0.22 264 / 0.7)", color: "oklch(0.98 0.005 260)", fontSize: "0.68rem" }}
                         >
                           {selectedSlotId ? "填入选中框" : "选框后填入"}
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (slots.length === 0) { return; }
+                            fillAllSlots(asset.id);
+                          }}
+                          disabled={slots.length === 0}
+                          className="px-2.5 py-1 rounded-md font-medium w-4/5 flex items-center justify-center gap-1 disabled:opacity-40"
+                          style={{ background: "oklch(0.55 0.22 280 / 0.85)", color: "oklch(0.98 0.005 260)", fontSize: "0.68rem" }}
+                          title="将这张图片填入全部图框"
+                        >
+                          <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                            <rect x="0.5" y="0.5" width="4" height="4" rx="0.5" stroke="currentColor" strokeWidth="1" fill="currentColor" fillOpacity="0.4"/>
+                            <rect x="5.5" y="0.5" width="4" height="4" rx="0.5" stroke="currentColor" strokeWidth="1" fill="currentColor" fillOpacity="0.4"/>
+                            <rect x="0.5" y="5.5" width="4" height="4" rx="0.5" stroke="currentColor" strokeWidth="1" fill="currentColor" fillOpacity="0.4"/>
+                            <rect x="5.5" y="5.5" width="4" height="4" rx="0.5" stroke="currentColor" strokeWidth="1" fill="currentColor" fillOpacity="0.4"/>
+                          </svg>
+                          填充全部图框
                         </button>
                         <button
                           onClick={(e) => { e.stopPropagation(); setCropTarget(asset); }}
