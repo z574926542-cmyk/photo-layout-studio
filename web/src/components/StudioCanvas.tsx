@@ -1155,13 +1155,19 @@ function AspectFillImage({
     outlineOffset: 2,
   } : {};
 
-  // 若尺寸无效（未加载完成或为0），回退到 CSS object-fit:cover 方案
+  // 若尺寸无效（未加载完成或为0），渲染隐藏占位符，等待 onLoad 后再显示，避免畴变
   if (!imgW || !imgH || imgW <= 0 || imgH <= 0) {
     return (
       <img
         src={displayUrl}
         alt={asset.name}
         draggable={false}
+        onLoad={(e) => {
+          const img = e.currentTarget;
+          if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+            setImgNaturalSize({ w: img.naturalWidth, h: img.naturalHeight });
+          }
+        }}
         style={{
           position: "absolute",
           inset: 0,
@@ -1169,6 +1175,7 @@ function AspectFillImage({
           height: "100%",
           objectFit: "cover",
           objectPosition: "center",
+          opacity: 0, // 尺寸未确认前隐藏，避免畴变闪现
           transform: `scale(${scale}) rotate(${rotation}deg)`,
           transformOrigin: "center center",
           userSelect: "none",
