@@ -407,9 +407,9 @@ export default function StudioCanvas() {
       const sd = imgScaleDragRef.current;
       if (!sd.active || sd.slotId !== imageEditSlotId) return;
 
-      // 屏幕像素增量转换为画布像素（除以 zoom，因为 initRenderW/H 是画布像素）
-      const dx = (e.clientX - sd.startClientX) / sd.zoom;
-      const dy = (e.clientY - sd.startClientY) / sd.zoom;
+      // 屏幕像素增量（initRenderW/H 也是屏幕像素，坐标系一致）
+      const dx = e.clientX - sd.startClientX;
+      const dy = e.clientY - sd.startClientY;
       const h = sd.handle;
 
       // 图片初始尺寸（像素）和初始位置（像素，相对图框左上角）
@@ -481,8 +481,8 @@ export default function StudioCanvas() {
       const newCenterX = newL + newW / 2;
       const newCenterY = newT + newH / 2;
       const newOffsetX = (newCenterX - sd.slotPxW / 2) / sd.slotPxW * 100;
-      const newOffsetY = (newCenterY - sd.slotPxH / 2) / sd.slotPxH * 100;
-
+       const newOffsetY = (newCenterY - sd.slotPxH / 2) / sd.slotPxH * 100;
+      console.log('[ImgScale] iW:', iW, 'iH:', iH, 'dx:', dx, 'dy:', dy, 'scaleFactor:', scaleFactor, 'newScale:', newScale, 'initScale:', sd.initScale, 'zoom:', sd.zoom);
       updateSlot(sd.slotId, {
         scale: round(newScale, 4),
         offsetX: round(newOffsetX, 3),
