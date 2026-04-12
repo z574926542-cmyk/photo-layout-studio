@@ -902,11 +902,11 @@ function SlotRenderer({
         outline: outlineStyle,
         boxShadow: boxShadowStyle,
         cursor: isImageEditMode ? "grab" : "move",
-        // 正常模式 overflow:hidden 裁剪；编辑模式 overflow:visible 显示完整图片
-        overflow: isImageEditMode ? "visible" : "hidden",
         // 编辑模式下需要更高 z-index 确保图片显示在其他图框上方
         zIndex: isImageEditMode ? 30 : undefined,
         transition: "box-shadow 0.15s ease, outline 0.15s ease",
+        // overflow:visible 让图框内容可以溢出（裁剪由内层 clip-path 处理）
+        overflow: "visible",
         // 圆角：基于短边像素值，四角均匀
         borderRadius: radiusPx > 0 ? `${radiusPx}px` : undefined,
       }}
@@ -921,12 +921,14 @@ function SlotRenderer({
         <div
           className="absolute inset-0"
           style={{
-            // 正常模式 overflow:hidden 配合外层裁剪；编辑模式 overflow:visible
-            overflow: isImageEditMode ? "visible" : "hidden",
-            // clip-path 圆角：编辑模式下取消，方便看完整图片
-            clipPath: radiusPx > 0 && !isImageEditMode
-              ? `inset(0 round ${radiusPx}px)`
-              : undefined,
+            overflow: "visible",
+            // 正常模式： clip-path inset(0) 裁剪图框范围内的内容（不受 transform 影响）
+            // 编辑模式：取消 clip-path，显示完整图片
+            clipPath: isImageEditMode
+              ? undefined
+              : radiusPx > 0
+                ? `inset(0 round ${radiusPx}px)`
+                : "inset(0)",
           }}
         >
           <AspectFillImage asset={asset} slot={slot} canvasW={canvasW} canvasH={canvasH} isEditMode={isImageEditMode} />
