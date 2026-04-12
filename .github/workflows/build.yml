@@ -43,17 +43,19 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: false
           ELECTRON_BUILDER_ALLOW_UNRESOLVED_DEPENDENCIES: true
+      - name: List release files
+        run: find release -name "*.dmg" 2>/dev/null || echo "No dmg found"
       - name: Upload macOS DMG (x64)
         uses: actions/upload-artifact@v4
         with:
           name: macos-dmg-x64
-          path: release/*.dmg
+          path: release/**/*.dmg
           if-no-files-found: error
       - name: Upload macOS DMG (x64) to Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: release/*.dmg
+          files: release/**/*.dmg
           draft: false
           prerelease: false
           generate_release_notes: true
@@ -96,17 +98,19 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: false
           ELECTRON_BUILDER_ALLOW_UNRESOLVED_DEPENDENCIES: true
+      - name: List release files
+        run: find release -name "*.dmg" 2>/dev/null || echo "No dmg found"
       - name: Upload macOS DMG (arm64)
         uses: actions/upload-artifact@v4
         with:
           name: macos-dmg-arm64
-          path: release/*.dmg
+          path: release/**/*.dmg
           if-no-files-found: error
       - name: Upload macOS DMG (arm64) to Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: release/*.dmg
+          files: release/**/*.dmg
           draft: false
           prerelease: false
           generate_release_notes: true
