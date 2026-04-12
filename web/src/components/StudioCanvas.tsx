@@ -792,7 +792,44 @@ export default function StudioCanvas() {
                   ? Math.round((editSlot.borderRadius / 100) * editShort)
                   : 0;
                 return (
-                  <div className="absolute pointer-events-none" style={{ left: `${x}%`, top: `${y}%`, width: `${w}%`, height: `${h}%`, border: "2px solid oklch(0.65 0.20 145 / 0.8)", zIndex: 26, boxShadow: "0 0 0 1px oklch(0.65 0.20 145 / 0.3)", borderRadius: editRadiusPx > 0 ? `${editRadiusPx}px` : undefined }} />
+                  <>
+                    {/* 图框轮廓层：高 z-index 确保始终显示在图片上方 */}
+                    <div
+                      className="absolute pointer-events-none"
+                      style={{
+                        left: `${x}%`,
+                        top: `${y}%`,
+                        width: `${w}%`,
+                        height: `${h}%`,
+                        border: "2px dashed oklch(0.65 0.22 220 / 0.95)",  // 蓝色虚线，与图片橙色区分
+                        zIndex: 35,  // 高于 slot div 的 30，始终在图片上方
+                        boxShadow: "0 0 0 1px oklch(0.65 0.22 220 / 0.3), inset 0 0 0 1px oklch(0.65 0.22 220 / 0.15)",
+                        borderRadius: editRadiusPx > 0 ? `${editRadiusPx}px` : undefined,
+                      }}
+                    />
+                    {/* 图框标签：左上角，高于图片 */}
+                    <div
+                      className="absolute pointer-events-none"
+                      style={{
+                        left: `${x}%`,
+                        top: `${y}%`,
+                        zIndex: 36,
+                        transform: "translate(4px, 4px)",
+                        background: "oklch(0.30 0.18 220 / 0.95)",
+                        border: "1px solid oklch(0.65 0.22 220 / 0.6)",
+                        borderRadius: 3,
+                        padding: "1px 6px",
+                        fontSize: 9,
+                        color: "oklch(0.88 0.12 220)",
+                        fontFamily: "system-ui, sans-serif",
+                        fontWeight: 600,
+                        letterSpacing: "0.05em",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      图框
+                    </div>
+                  </>
                 );
               })()}
             </>
@@ -871,9 +908,9 @@ function SlotRenderer({
     ? Math.round((slot.borderRadius / 100) * shortSide)
     : 0;
 
-  // 边框颜色：图片调节模式=绿色，选中=蓝色，多选=橙色，空框=虚线蓝
+  // 边框颜色：图片调节模式=蓝色虚线（图框），选中=蓝色，多选=橙色，空框=虚线蓝
   const outlineStyle = isImageEditMode
-    ? "2px solid oklch(0.65 0.20 145)"
+    ? "2px dashed oklch(0.55 0.22 220)"  // 图框：蓝色虚线（裁切窗口）
     : isSelected
     ? "2px solid oklch(0.58 0.22 264)"
     : isMultiSelected
@@ -883,7 +920,7 @@ function SlotRenderer({
     : "1.5px dashed oklch(0.58 0.22 264 / 0.55)";
 
   const boxShadowStyle = isImageEditMode
-    ? "0 0 0 2px oklch(0.65 0.20 145), 0 0 20px oklch(0.65 0.20 145 / 0.3)"
+    ? "0 0 0 2px oklch(0.55 0.22 220 / 0.5), 0 0 16px oklch(0.55 0.22 220 / 0.2)"  // 图框蓝色光晕
     : isSelected
     ? "0 0 0 2px oklch(0.58 0.22 264), 0 0 20px oklch(0.58 0.22 264 / 0.3)"
     : isMultiSelected
@@ -924,22 +961,23 @@ function SlotRenderer({
       {asset && (
         <>
           <AspectFillImage asset={asset} slot={slot} canvasW={canvasW} canvasH={canvasH} isEditMode={isImageEditMode} />
-          {/* 图片调节模式标识角标 */}
+          {/* 图片调节模式标识角标：图框标签（蓝色） */}
           {isImageEditMode && (
             <div
               className="absolute top-1 left-1 z-40 pointer-events-none"
               style={{
-                background: "oklch(0.65 0.20 145 / 0.9)",
+                background: "oklch(0.35 0.18 220 / 0.92)",
+                border: "1px solid oklch(0.55 0.22 220 / 0.6)",
                 borderRadius: 3,
-                padding: "1px 5px",
+                padding: "1px 6px",
                 fontSize: 9,
-                color: "white",
+                color: "oklch(0.85 0.12 220)",
                 fontFamily: "system-ui, sans-serif",
                 fontWeight: 600,
                 letterSpacing: "0.05em",
               }}
             >
-              图片
+              图框
             </div>
           )}
           {/* 删除当前图片按钮：悬停时显示，图片调节模式下隐藏 */}
@@ -1196,39 +1234,66 @@ function AspectFillImage({
   const imgLeft = imgCenterX - renderW / 2;
   const imgTop = imgCenterY - renderH / 2;
 
-  // 编辑模式下显示图片边界提示框
+  // 编辑模式下显示图片边界提示框（橙色虚线，与图框蓝色区分）
   const editOutlineStyle = isEditMode ? {
-    outline: "2px dashed oklch(0.65 0.22 145 / 0.9)",
+    outline: "2px dashed oklch(0.75 0.20 55 / 0.95)",  // 橙色虚线：表示可拖动的图片内容
     outlineOffset: 2,
   } : {};
 
   return (
-    <img
-      src={asset.dataUrl}
-      alt={asset.name}
-      draggable={false}
-      onLoad={(e) => {
-        // 当 asset.naturalWidth 为 0 时（图片尚未被浏览器缓存），从 img 元素获取真实尺寸
-        const el = e.currentTarget as HTMLImageElement;
-        if (el.naturalWidth > 0 && el.naturalHeight > 0) {
-          setLoadedSize({ w: el.naturalWidth, h: el.naturalHeight });
-        }
-      }}
-      style={{
-        position: "absolute",
-        // 用像素定位，完全不依赖 CSS 百分比计算基准
-        left: imgLeft,
-        top: imgTop,
-        width: renderW > 0 ? renderW : "100%",
-        height: renderH > 0 ? renderH : "100%",
-        // 旋转（以图片自身中心为原点）
-        transform: rotation !== 0 ? `rotate(${rotation}deg)` : undefined,
-        transformOrigin: "center center",
-        userSelect: "none",
-        pointerEvents: "none",
-        ...editOutlineStyle,
-      }}
-    />
+    <>
+      <img
+        src={asset.dataUrl}
+        alt={asset.name}
+        draggable={false}
+        onLoad={(e) => {
+          // 当 asset.naturalWidth 为 0 时（图片尚未被浏览器缓存），从 img 元素获取真实尺寸
+          const el = e.currentTarget as HTMLImageElement;
+          if (el.naturalWidth > 0 && el.naturalHeight > 0) {
+            setLoadedSize({ w: el.naturalWidth, h: el.naturalHeight });
+          }
+        }}
+        style={{
+          position: "absolute",
+          // 用像素定位，完全不依赖 CSS 百分比计算基准
+          left: imgLeft,
+          top: imgTop,
+          width: renderW > 0 ? renderW : "100%",
+          height: renderH > 0 ? renderH : "100%",
+          // 旋转（以图片自身中心为原点）
+          transform: rotation !== 0 ? `rotate(${rotation}deg)` : undefined,
+          transformOrigin: "center center",
+          userSelect: "none",
+          pointerEvents: "none",
+          ...editOutlineStyle,
+        }}
+      />
+      {/* 编辑模式下图片标签（橙色，与图框蓝色区分） */}
+      {isEditMode && renderW > 0 && renderH > 0 && (
+        <div
+          className="pointer-events-none"
+          style={{
+            position: "absolute",
+            left: imgLeft + renderW - 2,  // 图片右下角
+            top: imgTop + renderH - 2,
+            transform: "translate(-100%, -100%)",  // 向左上偏移，使标签在图片右下角内部
+            background: "oklch(0.40 0.20 55 / 0.92)",
+            border: "1px solid oklch(0.75 0.20 55 / 0.6)",
+            borderRadius: 3,
+            padding: "1px 6px",
+            fontSize: 9,
+            color: "oklch(0.92 0.10 55)",
+            fontFamily: "system-ui, sans-serif",
+            fontWeight: 600,
+            letterSpacing: "0.05em",
+            zIndex: 45,
+            whiteSpace: "nowrap",
+          }}
+        >
+          图片
+        </div>
+      )}
+    </>
   );
 }
 
