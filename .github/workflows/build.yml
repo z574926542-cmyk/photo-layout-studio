@@ -12,25 +12,31 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
           version: '10'
+
       - name: Install Electron dependencies
         run: npm install
+
       - name: Build frontend
         run: |
           cd web
           pnpm install --no-frozen-lockfile
           pnpm build
+
       - name: Free disk space
         run: |
           sudo rm -rf /Library/Developer/CoreSimulator/Profiles/Runtimes || true
           df -h
+
       - name: Build macOS DMG
         run: |
           for i in 1 2 3; do
@@ -42,9 +48,11 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
           ELECTRON_BUILDER_ALLOW_UNRESOLVED_DEPENDENCIES: true
+
       - name: List release files
         run: find release -name "*.dmg" 2>/dev/null || echo "No dmg found"
-      - name: Upload macOS DMG
+
+      - name: Upload macOS DMG artifact
         uses: actions/upload-artifact@v4
         with:
           name: macos-dmg
@@ -52,15 +60,24 @@ jobs:
             release/*.dmg
             release/**/*.dmg
           if-no-files-found: error
-      - name: Upload macOS DMG to Release
+
+      - name: Create GitHub Release and upload DMG
         if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v1
-        with:
-          files: |
-            release/*.dmg
-            release/**/*.dmg
-          draft: false
-          prerelease: false
-          generate_release_notes: true
-          fail_on_unmatched_files: false
-          token: ${{ secrets.GITHUB_TOKEN }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          echo "Creating release for tag: $TAG"
+
+          gh release create "$TAG" \
+            --title "奇妙奇遇光影集 $TAG" \
+            --notes "自动构建发布。macOS 安装包请下载 .dmg 文件。" \
+            --repo "$GITHUB_REPOSITORY" \
+            || echo "Release already exists, will upload files directly..."
+
+          find release -name "*.dmg" | while read dmg; do
+            echo "Uploading: $dmg"
+            gh release upload "$TAG" "$dmg" \
+              --repo "$GITHUB_REPOSITORY" \
+              --clobber
+          done
