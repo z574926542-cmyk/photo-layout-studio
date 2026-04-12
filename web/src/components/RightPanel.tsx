@@ -51,6 +51,7 @@ export default function RightPanel() {
     autoFillOrdered,
     updateAsset,
     updateSlot,
+    addOverlayFromDataUrl,
   } = useStudio();
   const { assets, slots, selectedSlotId } = state;
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -731,6 +732,23 @@ export default function RightPanel() {
                             移出图框
                           </button>
                         )}
+                        {/* 添加为装饰层 */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const dataUrl = asset.croppedDataUrl ?? asset.dataUrl;
+                            addOverlayFromDataUrl(dataUrl, asset.name);
+                          }}
+                          className="px-2.5 py-1 rounded-md w-4/5 flex items-center justify-center gap-1"
+                          style={{ background: "oklch(0.55 0.22 55 / 0.7)", color: "oklch(0.98 0.005 260)", fontSize: "0.68rem" }}
+                          title="添加为装饰层（永远置顶，换照片不变）"
+                        >
+                          <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                            <rect x="0.5" y="0.5" width="9" height="9" rx="1.5" stroke="currentColor" strokeWidth="1" fill="none"/>
+                            <path d="M5 3v4M3 5h4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+                          </svg>
+                          添加为装饰层
+                        </button>
                         {currentFolderId && (
                           <button
                             onClick={(e) => { e.stopPropagation(); removeFromFolder(asset.id); }}

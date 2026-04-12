@@ -155,7 +155,8 @@ export async function exportCanvasToPng(
   backgroundImage: string | null,
   backgroundColor: string,
   slots: Slot[],
-  assets: Asset[]
+  assets: Asset[],
+  overlays?: import('./types').OverlayItem[]
 ): Promise<string> {
   const canvas = document.createElement("canvas");
   canvas.width = canvasWidth;
@@ -236,6 +237,36 @@ export async function exportCanvasToPng(
       };
       img.src = displayUrl;
     });
+  }
+
+  // ─── 绘制装饰层（永远置顶） ────────────────────────────────────────────────
+  if (overlays && overlays.length > 0) {
+    for (const overlay of overlays) {
+      await new Promise<void>((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+          const ox = (overlay.x / 100) * canvasWidth;
+          const oy = (overlay.y / 100) * canvasHeight;
+          const ow = (overlay.w / 100) * canvasWidth;
+          const oh = (overlay.h / 100) * canvasHeight;
+          const cx = ox + ow / 2;
+          const cy = oy + oh / 2;
+
+          ctx.save();
+          ctx.globalAlpha = overlay.opacity ?? 1;
+          if (overlay.rotation) {
+            ctx.translate(cx, cy);
+            ctx.rotate((overlay.rotation * Math.PI) / 180);
+            ctx.translate(-cx, -cy);
+          }
+          ctx.drawImage(img, ox, oy, ow, oh);
+          ctx.restore();
+          resolve();
+        };
+        img.onerror = () => resolve();
+        img.src = overlay.dataUrl;
+      });
+    }
   }
 
   // 返回 dataUrl，由调用方决定如何保存
@@ -343,7 +374,8 @@ export function exportTemplate(
   slots: Slot[],
   templateName: string,
   author?: string,
-  description?: string
+  description?: string,
+  overlays?: import('./types').OverlayItem[]
 ): void {
   const template: LayoutTemplate = {
     _type: 'photo-layout-template',
@@ -366,6 +398,8 @@ export function exportTemplate(
       h: s.h,
       ...(s.label ? { label: s.label } : {}),
     })),
+    // 装饰层随模板一起保存（含 Base64）
+    ...(overlays && overlays.length > 0 ? { overlays } : {}),
   };
 
   const json = JSON.stringify(template, null, 2);

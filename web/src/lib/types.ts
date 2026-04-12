@@ -135,6 +135,11 @@ export interface LayoutTemplate {
     h: number;
     label?: string;
   }>;
+  /**
+   * 装饰层列表（含图片 Base64，随模板一起保存）
+   * 加载模板时恢复，换照片时不变
+   */
+  overlays?: OverlayItem[];
 }
 
 /**
@@ -150,6 +155,32 @@ export interface SavedTemplate {
   template: LayoutTemplate;
   /** 缩略图（Canvas 离线渲染的 Base64，可选，用于预览） */
   thumbnail?: string;
+}
+
+/**
+ * 装饰层（Overlay）：固定贴在照片图框上方的装饰图片
+ * - 保存在模板中，换照片时不变
+ * - 渲染顺序永远在所有 Slot 上方
+ * - 坐标系与 Slot 相同（百分比）
+ */
+export interface OverlayItem {
+  id: string;
+  /** X 坐标（百分比 0-100） */
+  x: number;
+  /** Y 坐标（百分比 0-100） */
+  y: number;
+  /** 宽度（百分比 0-100） */
+  w: number;
+  /** 高度（百分比 0-100） */
+  h: number;
+  /** 图片 Base64（始终内嵌，保存在模板中） */
+  dataUrl: string;
+  /** 透明度 0-1 */
+  opacity: number;
+  /** 旋转角度（度，-180~180） */
+  rotation: number;
+  /** 标签（可选） */
+  label?: string;
 }
 
 /** 预设模板 */

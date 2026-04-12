@@ -17,6 +17,7 @@ import type {
   LayoutScheme,
   EditorMode,
   LayoutTemplate,
+  OverlayItem,
 } from "@/lib/types";
 import type { TemplateIndex } from "@/lib/templateDb";
 import {
@@ -48,9 +49,11 @@ import { exportPng as electronExportPng, isElectron } from "@/lib/electronBridge
 interface StudioState {
   canvas: CanvasConfig;
   slots: Slot[];
+  overlays: OverlayItem[]; // 装饰层列表（永远渲染在 Slot 上方）
   assets: Asset[];
   selectedSlotId: string | null;
   selectedSlotIds: string[]; // 多选图框 ID 列表
+  selectedOverlayId: string | null; // 当前选中的装饰层 ID
   mode: EditorMode;
   zoom: number; // 0.2 ~ 4.0
   schemes: LayoutScheme[];
@@ -97,7 +100,14 @@ type Action =
   | { type: "REORDER_SLOT"; id: string; direction: "up" | "down" | "top" | "bottom" }
   | { type: "DUPLICATE_SLOT"; id: string }
   | { type: "ALIGN_SLOTS"; ids: string[]; align: "left" | "centerH" | "right" | "top" | "centerV" | "bottom" | "distributeH" | "distributeV"; relativeTo: "selection" | "canvas" }
-  | { type: "SELECT_SLOTS"; ids: string[] };
+  | { type: "SELECT_SLOTS"; ids: string[] }
+  // ─── Overlay Actions ──────────────────────────────────────
+  | { type: "ADD_OVERLAY"; overlay: OverlayItem }
+  | { type: "UPDATE_OVERLAY"; id: string; updates: Partial<OverlayItem> }
+  | { type: "DELETE_OVERLAY"; id: string }
+  | { type: "SELECT_OVERLAY"; id: string | null }
+  | { type: "SET_OVERLAYS"; overlays: OverlayItem[] }
+  | { type: "REORDER_OVERLAY"; id: string; direction: "up" | "down" | "top" | "bottom" };
 
 // ─── Initial State ────────────────────────────────────────
 const DEFAULT_CANVAS: CanvasConfig = {
@@ -136,9 +146,11 @@ function calcInitialZoom(): number {
 const initialState: StudioState = {
   canvas: DEFAULT_CANVAS,
   slots: [],
+  overlays: [],
   assets: [],
   selectedSlotId: null,
   selectedSlotIds: [],
+  selectedOverlayId: null,
   mode: "select",
   zoom: calcInitialZoom(),
   schemes: loadSchemes(),
@@ -529,9 +541,48 @@ function reducer(state: StudioState, action: Action): StudioState {
       });
       return pushHistory({ ...state, slots: updatedSlots });
     }
-    // ─── 多选 ───────────────────────────────────────────────────────────
+    // ─── 多选 ─────────────────────────────────────────────────────────────
     case "SELECT_SLOTS":
       return { ...state, selectedSlotIds: action.ids };
+
+    // ─── Overlay ───────────────────────────────────────────────────────────
+    case "ADD_OVERLAY":
+      return { ...state, overlays: [...state.overlays, action.overlay], selectedOverlayId: action.overlay.id, selectedSlotId: null, selectedSlotIds: [] };
+
+    case "UPDATE_OVERLAY": {
+      const newOverlays = state.overlays.map((o) =>
+        o.id === action.id ? { ...o, ...action.updates } : o
+      );
+      return { ...state, overlays: newOverlays };
+    }
+
+    case "DELETE_OVERLAY": {
+      const newOverlays = state.overlays.filter((o) => o.id !== action.id);
+      const newSelectedOverlay = state.selectedOverlayId === action.id ? null : state.selectedOverlayId;
+      return { ...state, overlays: newOverlays, selectedOverlayId: newSelectedOverlay };
+    }
+
+    case "SELECT_OVERLAY":
+      return { ...state, selectedOverlayId: action.id, selectedSlotId: null, selectedSlotIds: [] };
+
+    case "SET_OVERLAYS":
+      return { ...state, overlays: action.overlays };
+
+    case "REORDER_OVERLAY": {
+      const idx = state.overlays.findIndex((o) => o.id === action.id);
+      if (idx === -1) return state;
+      const arr = [...state.overlays];
+      let newIdx = idx;
+      if (action.direction === "up") newIdx = Math.min(arr.length - 1, idx + 1);
+      else if (action.direction === "down") newIdx = Math.max(0, idx - 1);
+      else if (action.direction === "top") newIdx = arr.length - 1;
+      else if (action.direction === "bottom") newIdx = 0;
+      if (newIdx === idx) return state;
+      const [item] = arr.splice(idx, 1);
+      arr.splice(newIdx, 0, item);
+      return { ...state, overlays: arr };
+    }
+
     default:
       return state;
   }
@@ -551,10 +602,8 @@ function pushHistory(state: StudioState): StudioState {
     historyIndex: trimmed.length - 1,
   };
 }
-
-// ─── Context ──────────────────────────────────────────────
-interface StudioContextValue {
-  state: StudioState;
+// ─── Context ────────────────────────────────────────────────
+export interface StudioContextValue {  state: StudioState;
   dispatch: React.Dispatch<Action>;
   // 便捷方法
   setMode: (mode: EditorMode) => void;
@@ -609,6 +658,21 @@ interface StudioContextValue {
   alignSlots: (ids: string[], align: "left" | "centerH" | "right" | "top" | "centerV" | "bottom" | "distributeH" | "distributeV", relativeTo: "selection" | "canvas") => void;
   // 多选
   selectSlots: (ids: string[]) => void;
+  // ─── Overlay 方法 ────────────────────────────────────────────────
+  /** 从图片文件上传并添加为装饰层 */
+  addOverlayFromFile: (file: File) => Promise<void>;
+  /** 从 dataUrl 直接添加装饰层 */
+  addOverlayFromDataUrl: (dataUrl: string, label?: string) => void;
+  /** 更新装饰层属性 */
+  updateOverlay: (id: string, updates: Partial<OverlayItem>) => void;
+  /** 删除装饰层 */
+  deleteOverlay: (id: string) => void;
+  /** 选中装饰层 */
+  selectOverlay: (id: string | null) => void;
+  /** 调整装饰层顺序 */
+  reorderOverlay: (id: string, direction: "up" | "down" | "top" | "bottom") => void;
+  /** 当前选中的装饰层 */
+  selectedOverlay: OverlayItem | null;
 }
 
 const StudioContext = createContext<StudioContextValue | null>(null);
@@ -633,11 +697,78 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   const canRedo = state.historyIndex < state.history.length - 1;
   const selectedSlot =
     state.slots.find((s) => s.id === state.selectedSlotId) ?? null;
+  const selectedOverlay =
+    state.overlays.find((o) => o.id === state.selectedOverlayId) ?? null;
 
   const setMode = useCallback((mode: EditorMode) => dispatch({ type: "SET_MODE", mode }), []);
   const setZoom = useCallback((zoom: number) => dispatch({ type: "SET_ZOOM", zoom }), []);
   const selectSlot = useCallback((id: string | null) => dispatch({ type: "SELECT_SLOT", id }), []);
   const selectSlots = useCallback((ids: string[]) => dispatch({ type: "SELECT_SLOTS", ids }), []);
+
+  // ─── Overlay 方法 ────────────────────────────────────────────────
+  const addOverlayFromFile = useCallback(async (file: File) => {
+    const reader = new FileReader();
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      reader.onload = (e) => resolve(e.target?.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const i = new Image();
+      i.onload = () => resolve(i);
+      i.onerror = reject;
+      i.src = dataUrl;
+    });
+    // 默认宽度 40%，高度按比例计算
+    const defaultW = 40;
+    const aspectRatio = img.naturalWidth / img.naturalHeight;
+    const defaultH = defaultW / aspectRatio;
+    const overlay: OverlayItem = {
+      id: genId(),
+      x: 30,
+      y: 30,
+      w: defaultW,
+      h: Math.min(defaultH, 80),
+      dataUrl,
+      opacity: 1,
+      rotation: 0,
+      label: file.name,
+    };
+    dispatch({ type: "ADD_OVERLAY", overlay });
+    toast.success(`装饰层「${file.name}」已添加`);
+  }, []);
+
+  const addOverlayFromDataUrl = useCallback((dataUrl: string, label?: string) => {
+    const overlay: OverlayItem = {
+      id: genId(),
+      x: 30,
+      y: 30,
+      w: 40,
+      h: 40,
+      dataUrl,
+      opacity: 1,
+      rotation: 0,
+      label,
+    };
+    dispatch({ type: "ADD_OVERLAY", overlay });
+  }, []);
+
+  const updateOverlay = useCallback((id: string, updates: Partial<OverlayItem>) => {
+    dispatch({ type: "UPDATE_OVERLAY", id, updates });
+  }, []);
+
+  const deleteOverlay = useCallback((id: string) => {
+    dispatch({ type: "DELETE_OVERLAY", id });
+    toast.success("装饰层已删除");
+  }, []);
+
+  const selectOverlay = useCallback((id: string | null) => {
+    dispatch({ type: "SELECT_OVERLAY", id });
+  }, []);
+
+  const reorderOverlay = useCallback((id: string, direction: "up" | "down" | "top" | "bottom") => {
+    dispatch({ type: "REORDER_OVERLAY", id, direction });
+  }, []);
   const reorderSlot = useCallback((id: string, direction: "up" | "down" | "top" | "bottom") => {
     dispatch({ type: "REORDER_SLOT", id, direction });
   }, []);
@@ -772,7 +903,8 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
         state.canvas.backgroundImage,
         state.canvas.backgroundColor,
         state.slots,
-        state.assets
+        state.assets,
+        state.overlays.length > 0 ? state.overlays : undefined
       );
       const defaultName = `光影集排版-${Date.now()}.png`;
       const result = await electronExportPng(dataUrl, defaultName);
@@ -805,7 +937,8 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
         state.slots,
         name.trim() || '未命名模板',
         author,
-        description
+        description,
+        state.overlays.length > 0 ? state.overlays : undefined
       );
       toast.success(`模板「${name}」已保存并下载！`);
     } catch {
@@ -833,6 +966,12 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       dispatch({ type: 'SET_SLOTS', slots: newSlots });
       dispatch({ type: 'SET_ZOOM', zoom: fitZoom });
       dispatch({ type: 'SELECT_SLOT', id: null });
+      // 恢复装饰层
+      if (tpl.overlays && tpl.overlays.length > 0) {
+        dispatch({ type: 'SET_OVERLAYS', overlays: tpl.overlays });
+      } else {
+        dispatch({ type: 'SET_OVERLAYS', overlays: [] });
+      }
 
       // 自动持久化到 IndexedDB（导入即保存，不阻塞 UI）
       saveTemplateToDb(tpl).then((entry) => {
@@ -867,6 +1006,12 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     dispatch({ type: 'SET_SLOTS', slots: newSlots });
     dispatch({ type: 'SET_ZOOM', zoom: fitZoom });
     dispatch({ type: 'SELECT_SLOT', id: null });
+    // 恢复装饰层
+    if (tpl.overlays && tpl.overlays.length > 0) {
+      dispatch({ type: 'SET_OVERLAYS', overlays: tpl.overlays });
+    } else {
+      dispatch({ type: 'SET_OVERLAYS', overlays: [] });
+    }
     toast.success(`已加载模板「${tpl.name}」，请上传照片填充图框`);
   }, []);
 
@@ -914,9 +1059,14 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
         if (state.selectedSlotId) {
           e.preventDefault();
           dispatch({ type: "DELETE_SLOT", id: state.selectedSlotId });
+        } else if (state.selectedOverlayId) {
+          e.preventDefault();
+          dispatch({ type: "DELETE_OVERLAY", id: state.selectedOverlayId });
+          toast.success("装饰层已删除");
         }
       } else if (e.key === "Escape") {
         dispatch({ type: "SELECT_SLOT", id: null });
+        dispatch({ type: "SELECT_OVERLAY", id: null });
         dispatch({ type: "SET_MODE", mode: "select" });
       } else if (e.key === "v") {
         dispatch({ type: "SET_MODE", mode: "select" });
@@ -975,6 +1125,14 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     duplicateSlot,
     alignSlots,
     selectSlots,
+    // Overlay
+    addOverlayFromFile,
+    addOverlayFromDataUrl,
+    updateOverlay,
+    deleteOverlay,
+    selectOverlay,
+    reorderOverlay,
+    selectedOverlay,
   };
 
   return (

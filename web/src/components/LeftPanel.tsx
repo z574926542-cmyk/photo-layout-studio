@@ -87,7 +87,23 @@ export default function LeftPanel() {
         onToggle={() => toggleSection("layers")}
         accent="oklch(0.72 0.16 55)"
       />
-      {openSections.has("layers") && <LayerPanel />}
+      {openSections.has("layers") && (
+        <>
+          <LayerPanel />
+          {/* 装饰层小标题 */}
+          <div
+            className="px-4 py-1.5 flex items-center gap-1.5"
+            style={{ borderBottom: "1px solid oklch(1 0 0 / 0.06)", background: "oklch(0.55 0.22 55 / 0.05)" }}
+          >
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+              <rect x="1" y="1" width="10" height="10" rx="2" stroke="oklch(0.72 0.22 55)" strokeWidth="1.2" fill="none"/>
+              <path d="M4 6h4M6 4v4" stroke="oklch(0.72 0.22 55)" strokeWidth="1.2" strokeLinecap="round"/>
+            </svg>
+            <span className="text-xs" style={{ color: "oklch(0.72 0.22 55)", fontSize: "0.65rem", fontWeight: 600 }}>装饰层</span>
+          </div>
+          <OverlayLayerPanel />
+        </>
+      )}
 
       {/* 方案管理 */}
       <SectionHeader
@@ -1267,9 +1283,145 @@ function LayerPanel() {
   );
 }
 
-// ─── 预设模板区块 ─────────────────────────────────────────────
-function PresetsSection() {
-  const { loadPreset } = useStudio();
+// ─── 装饰层管理面板 ───────────────────────────────────────────────────
+function OverlayLayerPanel() {
+  const {
+    state: { overlays, selectedOverlayId },
+    selectOverlay,
+    updateOverlay,
+    deleteOverlay,
+    reorderOverlay,
+    addOverlayFromFile,
+  } = useStudio();
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    files.forEach((f) => addOverlayFromFile(f));
+    e.target.value = "";
+  };
+
+  return (
+    <div
+      className="px-3 py-3 space-y-1"
+      style={{ borderBottom: "1px solid oklch(1 0 0 / 0.06)" }}
+    >
+      {/* 头部 */}
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-xs" style={{ color: "oklch(0.50 0.01 260)", fontSize: "0.65rem" }}>
+          装饰层永远置顶 · 换照片不变
+        </div>
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-all"
+          style={{
+            background: "oklch(0.55 0.22 55 / 0.15)",
+            border: "1px solid oklch(0.55 0.22 55 / 0.3)",
+            color: "oklch(0.78 0.15 55)",
+          }}
+          title="上传装饰图片"
+        >
+          <Upload size={10} />
+          添加
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          className="hidden"
+          onChange={handleUpload}
+        />
+      </div>
+
+      {overlays.length === 0 ? (
+        <div className="text-xs text-center py-2" style={{ color: "oklch(0.40 0.01 260)" }}>
+          暂无装饰层
+          <br />
+          <span style={{ fontSize: "0.6rem", color: "oklch(0.35 0.01 260)" }}>
+            点击「添加」或在素材库中选择「添加为装饰层」
+          </span>
+        </div>
+      ) : (
+        /* 装饰层列表（数组末尾 = 最顶层，反转显示） */
+        <div className="space-y-1 max-h-48 overflow-y-auto">
+          {[...overlays].reverse().map((overlay) => {
+            const isSelected = overlay.id === selectedOverlayId;
+            const originalIdx = overlays.indexOf(overlay);
+            const isTop = originalIdx === overlays.length - 1;
+            const isBottom = originalIdx === 0;
+            return (
+              <div
+                key={overlay.id}
+                className={cn(
+                  "flex items-center gap-1.5 px-2 py-1.5 rounded cursor-pointer transition-all",
+                  isSelected
+                    ? "border"
+                    : "hover:bg-white/5 border border-transparent"
+                )}
+                style={isSelected ? {
+                  background: "oklch(0.55 0.22 55 / 0.15)",
+                  borderColor: "oklch(0.55 0.22 55 / 0.4)",
+                } : {}}
+                onClick={() => selectOverlay(overlay.id)}
+              >
+                {/* 缩略图 */}
+                <div
+                  className="flex-shrink-0 rounded overflow-hidden"
+                  style={{ width: 24, height: 24, background: "oklch(0.15 0.01 260)", border: "1px solid oklch(1 0 0 / 0.1)" }}
+                >
+                  <img src={overlay.dataUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                </div>
+
+                {/* 名称和透明度 */}
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs truncate" style={{ color: isSelected ? "oklch(0.85 0.15 55)" : "oklch(0.72 0.01 260)" }}>
+                    {overlay.label || `装饰层 ${originalIdx + 1}`}
+                  </div>
+                  {/* 透明度滑块 */}
+                  <div className="flex items-center gap-1 mt-0.5">
+                    <input
+                      type="range"
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      value={overlay.opacity}
+                      onChange={(e) => updateOverlay(overlay.id, { opacity: parseFloat(e.target.value) })}
+                      onClick={(e) => e.stopPropagation()}
+                      className="flex-1"
+                      style={{ height: 3, accentColor: "oklch(0.72 0.22 55)" }}
+                      title={`透明度: ${Math.round(overlay.opacity * 100)}%`}
+                    />
+                    <span style={{ fontSize: "0.6rem", color: "oklch(0.45 0.01 260)", minWidth: 24 }}>
+                      {Math.round(overlay.opacity * 100)}%
+                    </span>
+                  </div>
+                </div>
+
+                {/* 操作按钮 */}
+                <div className="flex items-center gap-0.5 flex-shrink-0">
+                  <button title="上移" disabled={isTop} onClick={(e) => { e.stopPropagation(); reorderOverlay(overlay.id, "up"); }} className="p-0.5 rounded disabled:opacity-25" style={{ color: "oklch(0.55 0.01 260)" }}>
+                    <ArrowUp size={11} />
+                  </button>
+                  <button title="下移" disabled={isBottom} onClick={(e) => { e.stopPropagation(); reorderOverlay(overlay.id, "down"); }} className="p-0.5 rounded disabled:opacity-25" style={{ color: "oklch(0.55 0.01 260)" }}>
+                    <ArrowDown size={11} />
+                  </button>
+                  <button title="删除装饰层" onClick={(e) => { e.stopPropagation(); deleteOverlay(overlay.id); }} className="p-0.5 rounded hover:text-red-400 transition-colors" style={{ color: "oklch(0.55 0.01 260)" }}>
+                    <Trash2 size={11} />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── 预设模板区块 ───────────────────────────────────────────────────
+function PresetsSection() {const { loadPreset } = useStudio();
 
   return (
     <div

@@ -11,7 +11,7 @@ import React, {
   useEffect,
 } from "react";
 import { useStudio } from "@/contexts/StudioContext";
-import type { Slot, ResizeHandle } from "@/lib/types";
+import type { Slot, ResizeHandle, OverlayItem } from "@/lib/types";
 import { toPct, clamp, round, createSlot } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 
@@ -53,7 +53,7 @@ function getHandleStyle(handle: ResizeHandle): React.CSSProperties {
 
 export default function StudioCanvas() {
   const {
-    state: { canvas, slots, assets, selectedSlotId, selectedSlotIds, mode, zoom },
+    state: { canvas, slots, assets, selectedSlotId, selectedSlotIds, mode, zoom, overlays, selectedOverlayId },
     addSlot,
     selectSlot,
     selectSlots,
@@ -61,6 +61,9 @@ export default function StudioCanvas() {
     fillSlot,
     unfillSlot,
     setZoom,
+    updateOverlay,
+    selectOverlay,
+    deleteOverlay,
   } = useStudio();
 
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -69,6 +72,20 @@ export default function StudioCanvas() {
   const [drawingSlot, setDrawingSlot] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const [marquee, setMarquee] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+
+  // ─── Overlay 拖拽状态 ────────────────────────────────────────────────
+  const overlayDragRef = useRef<{
+    active: boolean;
+    type: "move" | "resize";
+    overlayId: string;
+    startClientX: number;
+    startClientY: number;
+    initX: number;
+    initY: number;
+    initW: number;
+    initH: number;
+    handle?: ResizeHandle;
+  }>({ active: false, type: "move", overlayId: "", startClientX: 0, startClientY: 0, initX: 0, initY: 0, initW: 0, initH: 0 });
 
   // ─── 图片调节模式 ─────────────────────────────────────────
   // 当前正在调节图片的图框 ID（null = 未进入图片调节模式）
@@ -532,6 +549,82 @@ export default function StudioCanvas() {
     e.dataTransfer.dropEffect = "copy";
   }, []);
 
+  // ─── Overlay 鼠标事件 ────────────────────────────────────────────────
+  const handleOverlayMouseDown = useCallback(
+    (e: React.MouseEvent, overlay: OverlayItem) => {
+      if (e.button !== 0) return;
+      e.stopPropagation();
+      selectOverlay(overlay.id);
+      overlayDragRef.current = {
+        active: true,
+        type: "move",
+        overlayId: overlay.id,
+        startClientX: e.clientX,
+        startClientY: e.clientY,
+        initX: overlay.x,
+        initY: overlay.y,
+        initW: overlay.w,
+        initH: overlay.h,
+      };
+    },
+    [selectOverlay]
+  );
+
+  const handleOverlayResizeMouseDown = useCallback(
+    (e: React.MouseEvent, overlay: OverlayItem, handle: ResizeHandle) => {
+      if (e.button !== 0) return;
+      e.stopPropagation();
+      overlayDragRef.current = {
+        active: true,
+        type: "resize",
+        overlayId: overlay.id,
+        startClientX: e.clientX,
+        startClientY: e.clientY,
+        initX: overlay.x,
+        initY: overlay.y,
+        initW: overlay.w,
+        initH: overlay.h,
+        handle,
+      };
+    },
+    []
+  );
+
+  // Overlay 鼠标移动和释放
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      const od = overlayDragRef.current;
+      if (!od.active) return;
+      const rect = canvasRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const dxPct = ((e.clientX - od.startClientX) / rect.width) * 100;
+      const dyPct = ((e.clientY - od.startClientY) / rect.height) * 100;
+
+      if (od.type === "move") {
+        const newX = clamp(od.initX + dxPct, 0, 100 - od.initW);
+        const newY = clamp(od.initY + dyPct, 0, 100 - od.initH);
+        updateOverlay(od.overlayId, { x: round(newX, 2), y: round(newY, 2) });
+      } else if (od.type === "resize" && od.handle) {
+        const h = od.handle;
+        let nx = od.initX, ny = od.initY, nw = od.initW, nh = od.initH;
+        if (h.includes("e")) nw = Math.max(2, od.initW + dxPct);
+        if (h.includes("s")) nh = Math.max(2, od.initH + dyPct);
+        if (h.includes("w")) { const newW = Math.max(2, od.initW - dxPct); nx = od.initX + (od.initW - newW); nw = newW; }
+        if (h.includes("n")) { const newH = Math.max(2, od.initH - dyPct); ny = od.initY + (od.initH - newH); nh = newH; }
+        updateOverlay(od.overlayId, { x: round(clamp(nx, 0, 100), 2), y: round(clamp(ny, 0, 100), 2), w: round(nw, 2), h: round(nh, 2) });
+      }
+    };
+    const handleMouseUp = () => {
+      overlayDragRef.current.active = false;
+    };
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [updateOverlay]);
+
   // Ctrl+滚轮缩放画布（图片调节模式下不触发）
   const handleWheel = useCallback(
     (e: React.WheelEvent) => {
@@ -654,6 +747,19 @@ export default function StudioCanvas() {
             }}
           />
         )}
+
+        {/* 装饰层（永远在 Slot 上方） */}
+        {overlays.map((overlay) => (
+          <OverlayRenderer
+            key={overlay.id}
+            overlay={overlay}
+            isSelected={overlay.id === selectedOverlayId}
+            zoom={zoom}
+            onMouseDown={handleOverlayMouseDown}
+            onResizeMouseDown={handleOverlayResizeMouseDown}
+            onDelete={() => deleteOverlay(overlay.id)}
+          />
+        ))}
 
         {/* 图片调节模式提示 */}
         {imageEditSlotId && (
@@ -977,4 +1083,146 @@ function AspectFillImage({
       }}
     />
   );
+}
+
+// ─── OverlayRenderer 组件 ─────────────────────────────────────────────────
+function OverlayRenderer({
+  overlay,
+  isSelected,
+  zoom,
+  onMouseDown,
+  onResizeMouseDown,
+  onDelete,
+}: {
+  overlay: OverlayItem;
+  isSelected: boolean;
+  zoom: number;
+  onMouseDown: (e: React.MouseEvent, overlay: OverlayItem) => void;
+  onResizeMouseDown: (e: React.MouseEvent, overlay: OverlayItem, handle: ResizeHandle) => void;
+  onDelete: () => void;
+}) {
+  const HANDLE_SIZE = Math.max(6, Math.min(10, 8 / zoom));
+  const resizeHandles: ResizeHandle[] = ["nw", "ne", "se", "sw", "n", "s", "e", "w"];
+
+  return (
+    <div
+      data-overlay={overlay.id}
+      style={{
+        position: "absolute",
+        left: `${overlay.x}%`,
+        top: `${overlay.y}%`,
+        width: `${overlay.w}%`,
+        height: `${overlay.h}%`,
+        opacity: overlay.opacity,
+        transform: overlay.rotation ? `rotate(${overlay.rotation}deg)` : undefined,
+        transformOrigin: "center center",
+        cursor: "move",
+        zIndex: 40,
+        outline: isSelected ? "2px solid oklch(0.72 0.22 55)" : "none",
+        outlineOffset: 1,
+        boxShadow: isSelected ? "0 0 0 1px oklch(0.72 0.22 55 / 0.3)" : "none",
+        pointerEvents: "all",
+        userSelect: "none",
+      }}
+      onMouseDown={(e) => onMouseDown(e, overlay)}
+    >
+      {/* 图片 */}
+      <img
+        src={overlay.dataUrl}
+        alt={overlay.label || "装饰层"}
+        draggable={false}
+        style={{
+          width: "100%",
+          height: "100%",
+          objectFit: "contain",
+          display: "block",
+          pointerEvents: "none",
+          userSelect: "none",
+        }}
+      />
+
+      {/* 选中时的缩放手柄 */}
+      {isSelected && resizeHandles.map((handle) => (
+        <div
+          key={handle}
+          style={{
+            position: "absolute",
+            ...getHandleStyle(handle),
+            width: HANDLE_SIZE,
+            height: HANDLE_SIZE,
+            backgroundColor: "oklch(0.72 0.22 55)",
+            border: "1.5px solid white",
+            borderRadius: 2,
+            zIndex: 50,
+            cursor: getResizeCursor(handle),
+          }}
+          onMouseDown={(e) => {
+            e.stopPropagation();
+            onResizeMouseDown(e, overlay, handle);
+          }}
+        />
+      ))}
+
+      {/* 选中时的删除按钮 */}
+      {isSelected && (
+        <button
+          style={{
+            position: "absolute",
+            top: -20,
+            right: -4,
+            width: 18,
+            height: 18,
+            borderRadius: "50%",
+            background: "oklch(0.62 0.22 25 / 0.92)",
+            border: "1px solid oklch(1 0 0 / 0.3)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: "pointer",
+            zIndex: 55,
+          }}
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => { e.stopPropagation(); onDelete(); }}
+          title="删除装饰层"
+        >
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+            <path d="M2 2L8 8M8 2L2 8" stroke="white" strokeWidth="1.5" strokeLinecap="round"/>
+          </svg>
+        </button>
+      )}
+
+      {/* 选中时的标签 */}
+      {isSelected && overlay.label && (
+        <div
+          style={{
+            position: "absolute",
+            top: -20,
+            left: 0,
+            background: "oklch(0.15 0.02 264 / 0.9)",
+            border: "1px solid oklch(0.72 0.22 55 / 0.4)",
+            borderRadius: 3,
+            padding: "1px 5px",
+            fontSize: 9,
+            color: "oklch(0.85 0.12 55)",
+            fontFamily: "system-ui, sans-serif",
+            whiteSpace: "nowrap",
+            pointerEvents: "none",
+            maxWidth: 120,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
+        >
+          {overlay.label}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function getResizeCursor(handle: ResizeHandle): string {
+  const map: Record<ResizeHandle, string> = {
+    nw: "nw-resize", ne: "ne-resize", se: "se-resize", sw: "sw-resize",
+    n: "n-resize", s: "s-resize", e: "e-resize", w: "w-resize",
+  };
+  return map[handle] ?? "pointer";
 }
