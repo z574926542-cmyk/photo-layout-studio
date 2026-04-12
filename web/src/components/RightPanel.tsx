@@ -813,29 +813,6 @@ export default function RightPanel() {
                           <span>填全部</span>
                         </button>
 
-                        {/* 编辑/裁剪 */}
-                        <button
-                          onClick={(e) => { e.stopPropagation(); setCropTarget(asset); }}
-                          style={{
-                            background: asset.cropRect ? "oklch(0.58 0.20 45 / 0.95)" : "oklch(0.35 0.10 45 / 0.85)",
-                            color: "white",
-                            border: "1px solid oklch(0.62 0.20 45 / 0.4)",
-                            borderRadius: 4,
-                            height: 22,
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 3,
-                            padding: "0 5px",
-                            cursor: "pointer",
-                            fontSize: "0.52rem",
-                            whiteSpace: "nowrap",
-                          }}
-                          title={asset.cropRect ? "重新编辑" : "编辑图片"}
-                        >
-                          <Crop size={10} style={{flexShrink:0}} />
-                          <span>{asset.cropRect ? "重新编辑" : "编辑"}</span>
-                        </button>
-
                         {/* 添加为装饰层 */}
                         <button
                           onClick={(e) => { e.stopPropagation(); addOverlayFromDataUrl(asset.croppedDataUrl ?? asset.dataUrl, asset.name); }}
@@ -862,32 +839,29 @@ export default function RightPanel() {
                           <span>装饰层</span>
                         </button>
 
-                        {/* 移出图框（仅已填入时显示，否则占位保持布局稳定） */}
-                        {isUsed ? (
-                          <button
-                            onClick={(e) => { e.stopPropagation(); unfillSlot(usedInSlot!.id); }}
-                            style={{
-                              background: "oklch(0.50 0.20 25 / 0.95)",
-                              color: "white",
-                              border: "1px solid oklch(0.55 0.20 25 / 0.4)",
-                              borderRadius: 4,
-                              height: 22,
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 3,
-                              padding: "0 5px",
-                              cursor: "pointer",
-                              fontSize: "0.52rem",
-                              whiteSpace: "nowrap",
-                            }}
-                            title="移出图框"
-                          >
-                            <X size={10} style={{flexShrink:0}} />
-                            <span>移出框</span>
-                          </button>
-                        ) : (
-                          <div style={{height: 22}} />
-                        )}
+                        {/* 移出图框 */}
+                        <button
+                          onClick={(e) => { e.stopPropagation(); if (isUsed) unfillSlot(usedInSlot!.id); }}
+                          disabled={!isUsed}
+                          style={{
+                            background: isUsed ? "oklch(0.48 0.18 25 / 0.95)" : "oklch(0.22 0.04 260 / 0.6)",
+                            color: isUsed ? "white" : "oklch(0.45 0.01 260)",
+                            border: `1px solid ${isUsed ? "oklch(0.55 0.18 25 / 0.5)" : "oklch(0.32 0.02 260 / 0.4)"}`,
+                            borderRadius: 4,
+                            height: 22,
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 3,
+                            padding: "0 5px",
+                            cursor: isUsed ? "pointer" : "default",
+                            fontSize: "0.52rem",
+                            whiteSpace: "nowrap",
+                          }}
+                          title={isUsed ? "移出图框" : "未填入任何图框"}
+                        >
+                          <X size={10} style={{flexShrink:0}} />
+                          <span>移出框</span>
+                        </button>
 
                         {/* 删除图片 */}
                         <button
