@@ -62,7 +62,7 @@ jobs:
           if-no-files-found: error
 
       - name: Create GitHub Release and upload DMG
-        if: startsWith(github.ref, "refs/tags/")
+        if: startsWith(github.ref, 'refs/tags/')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
