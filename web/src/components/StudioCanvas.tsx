@@ -117,9 +117,20 @@ export default function StudioCanvas() {
     startClientX: number;
     startClientY: number;
     initScale: number;
-    slotPxW: number; // 图框屏幕宽度（用于计算拖拽量）
-    slotPxH: number;
-  }>({ active: false, slotId: "", handle: "se", startClientX: 0, startClientY: 0, initScale: 1, slotPxW: 0, slotPxH: 0 });
+    initOffsetX: number;  // 拖拽开始时的 offsetX
+    initOffsetY: number;  // 拖拽开始时的 offsetY
+    slotPxW: number;      // 图框屏幕宽度
+    slotPxH: number;      // 图框屏幕高度
+    initImgLeft: number;  // 拖拽开始时图片左边缘（相对图框）
+    initImgTop: number;   // 拖拽开始时图片上边缘（相对图框）
+    initRenderW: number;  // 拖拽开始时图片渲染宽度
+    initRenderH: number;  // 拖拽开始时图片渲染高度
+    baseScale: number;    // cover 基准缩放（不含用户 scale）
+    anchorImgX: number;   // 锚点在图片坐标系中的 X（0=左边，1=右边）
+    anchorImgY: number;   // 锚点在图片坐标系中的 Y（0=上边，1=下边）
+    anchorSlotX: number;  // 锚点相对图框的像素 X（拖拽时保持不动）
+    anchorSlotY: number;  // 锚点相对图框的像素 Y（拖拽时保持不动）
+  }>({ active: false, slotId: "", handle: "se", startClientX: 0, startClientY: 0, initScale: 1, initOffsetX: 0, initOffsetY: 0, slotPxW: 0, slotPxH: 0, initImgLeft: 0, initImgTop: 0, initRenderW: 0, initRenderH: 0, baseScale: 1, anchorImgX: 0, anchorImgY: 0, anchorSlotX: 0, anchorSlotY: 0 });
 
   // ─── 视口平移状态（空格+拖动 / 中键拖动） ─────────────────
   const [isPanning, setIsPanning] = useState(false);
@@ -388,30 +399,93 @@ export default function StudioCanvas() {
     [imageEditSlotId, updateSlot]
   );
 
-  // ─── 图片缩放手柄事件监听 ────────────────────────────────────
+  // ─── 图片缩放手柄事件监听（PS Ctrl+T 等比缩放 + 锚点保持不动） ────────────────────────────────────
   useEffect(() => {
     if (!imageEditSlotId) return;
     const handleScaleMouseMove = (e: MouseEvent) => {
       const sd = imgScaleDragRef.current;
       if (!sd.active || sd.slotId !== imageEditSlotId) return;
-      // 根据拖拽手柄方向计算缩放量
-      const dx = e.clientX - sd.startClientX;
-      const dy = e.clientY - sd.startClientY;
+
+      const dx = (e.clientX - sd.startClientX) / sd.slotPxW * 100; // 屏幕像素差转为图框百分比
+      const dy = (e.clientY - sd.startClientY) / sd.slotPxH * 100;
       const h = sd.handle;
-      // 对角手柄：取 dx/dy 中较大的那个方向（等比缩放）
-      // 边手柄：只取对应方向
-      let delta = 0;
-      if (h === "nw" || h === "sw") delta = (-dx) / sd.slotPxW;
-      else if (h === "ne" || h === "se") delta = dx / sd.slotPxW;
-      else if (h === "n") delta = (-dy) / sd.slotPxH;
-      else if (h === "s") delta = dy / sd.slotPxH;
-      else if (h === "w") delta = (-dx) / sd.slotPxW;
-      else if (h === "e") delta = dx / sd.slotPxW;
-      // 对角手柄取对角方向平均
-      if (h === "nw" || h === "se") delta = ((-dx) / sd.slotPxW + (-dy) / sd.slotPxH) / 2;
-      if (h === "ne" || h === "sw") delta = (dx / sd.slotPxW + (-dy) / sd.slotPxH) / 2;
-      const newScale = clamp(sd.initScale + delta * 2, 0.1, 5.0);
-      updateSlot(sd.slotId, { scale: round(newScale, 3) });
+
+      // 根据手柄方向，计算拖拽边在图框百分比坐标系中的新位置
+      // 拖拽边 = 图片对应边缘的新位置
+      // 对边（锚点）保持不动
+
+      // 图片初始尺寸（图框百分比）
+      const initW = sd.initRenderW / sd.slotPxW * 100;
+      const initH = sd.initRenderH / sd.slotPxH * 100;
+
+      // 图片初始边缘（图框百分比）
+      const initLeft = sd.initImgLeft / sd.slotPxW * 100;
+      const initTop  = sd.initImgTop  / sd.slotPxH * 100;
+
+      // 根据手柄计算拖动边的新位置
+      let newLeft = initLeft;
+      let newTop  = initTop;
+      let newW    = initW;
+      let newH    = initH;
+
+      if (h === "e" || h === "ne" || h === "se") {
+        // 拖动右边：右边移动，左边不动
+        newW = initW + dx;
+      } else if (h === "w" || h === "nw" || h === "sw") {
+        // 拖动左边：左边移动，右边不动
+        newLeft = initLeft + dx;
+        newW = initW - dx;
+      }
+      if (h === "s" || h === "se" || h === "sw") {
+        // 拖动下边：下边移动，上边不动
+        newH = initH + dy;
+      } else if (h === "n" || h === "ne" || h === "nw") {
+        // 拖动上边：上边移动，下边不动
+        newTop = initTop + dy;
+        newH = initH - dy;
+      }
+
+      // 对角手柄：等比缩放（以宽高变化平均值为准）
+      if (h === "nw" || h === "ne" || h === "sw" || h === "se") {
+        const scaleFactorW = newW / initW;
+        const scaleFactorH = newH / initH;
+        // 取平均等比缩放因子
+        const scaleFactor = (scaleFactorW + scaleFactorH) / 2;
+        const uniformNewW = initW * scaleFactor;
+        const uniformNewH = initH * scaleFactor;
+        // 根据手柄重新计算左上角（保持锚点不动）
+        if (h === "se") { newLeft = initLeft; newTop = initTop; }
+        else if (h === "sw") { newLeft = initLeft + initW - uniformNewW; newTop = initTop; }
+        else if (h === "ne") { newLeft = initLeft; newTop = initTop + initH - uniformNewH; }
+        else if (h === "nw") { newLeft = initLeft + initW - uniformNewW; newTop = initTop + initH - uniformNewH; }
+        newW = uniformNewW;
+        newH = uniformNewH;
+      }
+
+      // 限制最小尺寸：至少 5% 图框宽/高
+      if (newW < 5 || newH < 5) return;
+
+      // 从新的图片尺寸反推 scale 和 offsetX/offsetY
+      // renderW = imgW * baseScale * scale => scale = renderW / (imgW * baseScale)
+      // imgW * baseScale = initRenderW / initScale
+      const initRenderWPct = sd.initRenderW / sd.slotPxW * 100;
+      const imgBaseW = initRenderWPct / sd.initScale; // imgW * baseScale / slotW * 100
+      const newScale = clamp(newW / imgBaseW, 0.1, 5.0);
+
+      // 新的 offsetX/offsetY：从图片左上角位置反推
+      // imgCenterX = slotW/2 + offsetX/100 * slotW
+      // imgLeft = imgCenterX - renderW/2
+      // => offsetX = (imgLeft + renderW/2 - slotW/2) / slotW * 100
+      const newImgCenterX = newLeft + newW / 2;
+      const newImgCenterY = newTop + newH / 2;
+      const newOffsetX = (newImgCenterX - 50); // 百分比，相对图框宽度
+      const newOffsetY = (newImgCenterY - 50); // 百分比，相对图框高度
+
+      updateSlot(sd.slotId, {
+        scale: round(newScale, 4),
+        offsetX: round(newOffsetX, 3),
+        offsetY: round(newOffsetY, 3),
+      });
     };
     const handleScaleMouseUp = () => {
       imgScaleDragRef.current.active = false;
@@ -474,7 +548,7 @@ export default function StudioCanvas() {
   }, []);
   // ─── 图片缩放手柄鼠标按下（图片编辑模式下） ─────────────────────────
   const handleImgScaleMouseDown = useCallback(
-    (e: React.MouseEvent, slot: Slot, handle: ResizeHandle) => {
+    (e: React.MouseEvent, slot: Slot, handle: ResizeHandle, imgRect: { left: number; top: number; renderW: number; renderH: number; baseScale: number }) => {
       if (e.button !== 0) return;
       e.stopPropagation();
       e.preventDefault();
@@ -487,8 +561,19 @@ export default function StudioCanvas() {
         startClientX: e.clientX,
         startClientY: e.clientY,
         initScale: slot.scale ?? 1,
+        initOffsetX: slot.offsetX ?? 0,
+        initOffsetY: slot.offsetY ?? 0,
         slotPxW,
         slotPxH,
+        initImgLeft: imgRect.left,
+        initImgTop: imgRect.top,
+        initRenderW: imgRect.renderW,
+        initRenderH: imgRect.renderH,
+        baseScale: imgRect.baseScale,
+        anchorImgX: 0,
+        anchorImgY: 0,
+        anchorSlotX: 0,
+        anchorSlotY: 0,
       };
     },
     [displayW, displayH]
@@ -1022,7 +1107,7 @@ interface SlotRendererProps {
   onWheel: (e: React.WheelEvent, slot: Slot) => void;
   onResizeMouseDown: (e: React.MouseEvent, slot: Slot, handle: ResizeHandle) => void;
   onRotateMouseDown: (e: React.MouseEvent, slot: Slot) => void;
-  onImgScaleMouseDown: (e: React.MouseEvent, slot: Slot, handle: ResizeHandle) => void;
+  onImgScaleMouseDown: (e: React.MouseEvent, slot: Slot, handle: ResizeHandle, imgRect: { left: number; top: number; renderW: number; renderH: number; baseScale: number }) => void;
   onDrop: (e: React.DragEvent, slotId: string) => void;
   onDragOver: (e: React.DragEvent) => void;
   onUnfill: () => void;
@@ -1048,8 +1133,9 @@ function SlotRenderer({
   onUnfill,
 }: SlotRendererProps) {
   const hasFill = !!asset;
-
-  // 圆角像素值：基于短边计算，确保四角均匀
+  // 图片实际位置和尺寸（由 AspectFillImage 回调更新）
+  const [imgRect, setImgRect] = React.useState<{ left: number; top: number; renderW: number; renderH: number; baseScale: number } | null>(null);
+  // 圆角像素値：基于短边计算，确保四角均匀
   // slot.borderRadius 是 0~50 的百分比，转换为短边的对应像素值
   const slotPxW = (slot.w / 100) * canvasW;
   const slotPxH = (slot.h / 100) * canvasH;
@@ -1110,7 +1196,7 @@ function SlotRenderer({
       {/* 图片填充：直接相对 slot div 定位，无中间层 */}
       {asset && (
         <>
-          <AspectFillImage asset={asset} slot={slot} canvasW={canvasW} canvasH={canvasH} isEditMode={isImageEditMode} />
+          <AspectFillImage asset={asset} slot={slot} canvasW={canvasW} canvasH={canvasH} isEditMode={isImageEditMode} onImgRect={isImageEditMode ? setImgRect : undefined} />
           {/* 图片调节模式标识角标：图框标签（蓝色） */}
           {isImageEditMode && (
             <div
@@ -1201,24 +1287,43 @@ function SlotRenderer({
           />
         ))}
 
-      {/* 图片调节模式：图片缩放手柄（图框四角和四边，橙色） */}
-      {isImageEditMode && asset && RESIZE_HANDLES.map((handle) => (
-        <div
-          key={`img-scale-${handle}`}
-          className="absolute z-50"
-          style={{
-            ...getHandleStyle(handle),
-            width: 10,
-            height: 10,
-            backgroundColor: "oklch(0.72 0.20 55)",  // 橙色，与图框蓝色区分
-            border: "1.5px solid white",
-            borderRadius: 2,
-            boxShadow: "0 0 0 1px oklch(0.72 0.20 55 / 0.5)",
-          }}
-          onMouseDown={(e) => { e.stopPropagation(); onImgScaleMouseDown(e, slot, handle); }}
-          title="拖动缩放图片"
-        />
-      ))}
+      {/* 图片调节模式：图片缩放手柄（显示在图片实际边界，橙色） */}
+      {isImageEditMode && asset && imgRect && imgRect.renderW > 0 && RESIZE_HANDLES.map((handle) => {
+        // 根据手柄方向计算控制点在图片实际边界上的位置
+        const HSIZE = 10;
+        const half = HSIZE / 2;
+        const { left: iL, top: iT, renderW: iW, renderH: iH } = imgRect;
+        const handlePos: React.CSSProperties = (() => {
+          switch (handle) {
+            case "nw": return { left: iL - half, top: iT - half, cursor: "nw-resize" };
+            case "n":  return { left: iL + iW / 2 - half, top: iT - half, cursor: "n-resize" };
+            case "ne": return { left: iL + iW - half, top: iT - half, cursor: "ne-resize" };
+            case "w":  return { left: iL - half, top: iT + iH / 2 - half, cursor: "w-resize" };
+            case "e":  return { left: iL + iW - half, top: iT + iH / 2 - half, cursor: "e-resize" };
+            case "sw": return { left: iL - half, top: iT + iH - half, cursor: "sw-resize" };
+            case "s":  return { left: iL + iW / 2 - half, top: iT + iH - half, cursor: "s-resize" };
+            case "se": return { left: iL + iW - half, top: iT + iH - half, cursor: "se-resize" };
+          }
+        })();
+        return (
+          <div
+            key={`img-scale-${handle}`}
+            className="absolute z-50"
+            style={{
+              position: "absolute",
+              ...handlePos,
+              width: HSIZE,
+              height: HSIZE,
+              backgroundColor: "oklch(0.72 0.20 55)",
+              border: "1.5px solid white",
+              borderRadius: 2,
+              boxShadow: "0 0 0 1px oklch(0.72 0.20 55 / 0.5)",
+            }}
+            onMouseDown={(e) => { e.stopPropagation(); onImgScaleMouseDown(e, slot, handle, imgRect); }}
+            title="拖动缩放图片"
+          />
+        );
+      })}
 
       {/* 图片调节模式：旋转手柄（图框四角外侧） */}
       {isImageEditMode && asset && (
@@ -1342,12 +1447,14 @@ function AspectFillImage({
   canvasW,
   canvasH,
   isEditMode,
+  onImgRect,
 }: {
   asset: import("@/lib/types").Asset;
   slot: Slot;
   canvasW: number;
   canvasH: number;
   isEditMode: boolean;
+  onImgRect?: (rect: { left: number; top: number; renderW: number; renderH: number; baseScale: number }) => void;
 }) {
   // ── 用 state 追踪图片真实尺寸（防止 asset.naturalWidth/Height 为 0 的情况）──
   // 当 asset.naturalWidth > 0 时直接用，否则等 onLoad 后更新
@@ -1402,7 +1509,12 @@ function AspectFillImage({
   const imgCenterY = slotH / 2 + (offsetY / 100) * slotH;
   const imgLeft = imgCenterX - renderW / 2;
   const imgTop = imgCenterY - renderH / 2;
-
+  // 图片位置变化时通知父组件（用于显示缩放手柄）
+  React.useEffect(() => {
+    if (isEditMode && onImgRect && renderW > 0 && renderH > 0) {
+      onImgRect({ left: imgLeft, top: imgTop, renderW, renderH, baseScale });
+    }
+  }, [isEditMode, onImgRect, imgLeft, imgTop, renderW, renderH, baseScale]);
   // 编辑模式下显示图片边界提示框（橙色虚线，与图框蓝色区分）
   const editOutlineStyle = isEditMode ? {
     outline: "2px dashed oklch(0.75 0.20 55 / 0.95)",  // 橙色虚线：表示可拖动的图片内容
