@@ -706,6 +706,8 @@ export default function StudioCanvas() {
             isMultiSelected={selectedSlotIds.includes(slot.id)}
             isImageEditMode={imageEditSlotId === slot.id}
             zoom={zoom}
+            canvasW={canvas.width}
+            canvasH={canvas.height}
             onMouseDown={handleSlotMouseDown}
             onDoubleClick={handleSlotDoubleClick}
             onWheel={handleSlotWheel}
@@ -761,6 +763,28 @@ export default function StudioCanvas() {
           />
         ))}
 
+        {/* 编辑模式下的图框外区域遮罩（让用户清楚看到图框边界） */}
+        {imageEditSlotId && (() => {
+          const editSlot = slots.find((s) => s.id === imageEditSlotId);
+          if (!editSlot) return null;
+          // 用四个半透明覆盖层模拟图框外区域变暗
+          const { x, y, w, h } = editSlot;
+          return (
+            <>
+              {/* 上方 */}
+              {y > 0 && <div className="absolute pointer-events-none" style={{ left: 0, top: 0, width: "100%", height: `${y}%`, background: "oklch(0 0 0 / 0.45)", zIndex: 25 }} />}
+              {/* 下方 */}
+              {(y + h) < 100 && <div className="absolute pointer-events-none" style={{ left: 0, top: `${y + h}%`, width: "100%", bottom: 0, height: `${100 - y - h}%`, background: "oklch(0 0 0 / 0.45)", zIndex: 25 }} />}
+              {/* 左方 */}
+              {x > 0 && <div className="absolute pointer-events-none" style={{ left: 0, top: `${y}%`, width: `${x}%`, height: `${h}%`, background: "oklch(0 0 0 / 0.45)", zIndex: 25 }} />}
+              {/* 右方 */}
+              {(x + w) < 100 && <div className="absolute pointer-events-none" style={{ left: `${x + w}%`, top: `${y}%`, width: `${100 - x - w}%`, height: `${h}%`, background: "oklch(0 0 0 / 0.45)", zIndex: 25 }} />}
+              {/* 图框边界轮廓线 */}
+              <div className="absolute pointer-events-none" style={{ left: `${x}%`, top: `${y}%`, width: `${w}%`, height: `${h}%`, border: "2px solid oklch(0.65 0.20 145 / 0.8)", zIndex: 26, boxShadow: "0 0 0 1px oklch(0.65 0.20 145 / 0.3)" }} />
+            </>
+          );
+        })()}
+
         {/* 图片调节模式提示 */}
         {imageEditSlotId && (
           <div
@@ -792,6 +816,8 @@ interface SlotRendererProps {
   isMultiSelected: boolean;
   isImageEditMode: boolean;
   zoom: number;
+  canvasW: number;
+  canvasH: number;
   onMouseDown: (e: React.MouseEvent, slot: Slot) => void;
   onDoubleClick: (e: React.MouseEvent, slot: Slot) => void;
   onWheel: (e: React.WheelEvent, slot: Slot) => void;
@@ -809,6 +835,8 @@ function SlotRenderer({
   isMultiSelected,
   isImageEditMode,
   zoom,
+  canvasW,
+  canvasH,
   onMouseDown,
   onDoubleClick,
   onWheel,
@@ -854,7 +882,10 @@ function SlotRenderer({
         outline: outlineStyle,
         boxShadow: boxShadowStyle,
         cursor: isImageEditMode ? "grab" : "move",
-        overflow: "hidden",
+        // 编辑模式下 overflow:visible 让图框外的图片可见；普通模式下 overflow:hidden 裁剪显示
+        overflow: isImageEditMode ? "visible" : "hidden",
+        // 编辑模式下需要更高 z-index 确保图片显示在其他图框上方
+        zIndex: isImageEditMode ? 30 : undefined,
         transition: "box-shadow 0.15s ease, outline 0.15s ease",
       }}
       onMouseDown={(e) => onMouseDown(e, slot)}
@@ -865,8 +896,14 @@ function SlotRenderer({
     >
       {/* 图片填充 */}
       {asset && (
-        <div className="absolute inset-0 overflow-hidden">
-          <AspectFillImage asset={asset} slot={slot} />
+        <div
+          className="absolute inset-0"
+          style={{
+            // 普通模式：裁剪显示；编辑模式：不裁剪，让图片完整可见
+            overflow: isImageEditMode ? "visible" : "hidden",
+          }}
+        >
+          <AspectFillImage asset={asset} slot={slot} canvasW={canvasW} canvasH={canvasH} isEditMode={isImageEditMode} />
           {/* 图片调节模式标识角标 */}
           {isImageEditMode && (
             <div
@@ -1050,18 +1087,68 @@ function SlotRenderer({
   );
 }
 // ─── 图片渲染（支持 offsetX/offsetY/scale/rotation）────
+// 重要设计原则：
+//   普通模式：图片按 cover 比例计算真实尺寸，位置居中。图框 overflow:hidden 裁剪显示。
+//   编辑模式：图框 overflow:visible，图片完整可见（包括溢出部分）。
+//   两种模式下图片的实际尺寸和位置完全一致，不会因模式切换而跳动。
 function AspectFillImage({
   asset,
   slot,
+  canvasW,
+  canvasH,
+  isEditMode,
 }: {
   asset: import("@/lib/types").Asset;
   slot: Slot;
+  canvasW: number;
+  canvasH: number;
+  isEditMode: boolean;
 }) {
   const displayUrl = asset.croppedDataUrl ?? asset.dataUrl;
   const offsetX = slot.offsetX ?? 0;
   const offsetY = slot.offsetY ?? 0;
   const scale = slot.scale ?? 1;
   const rotation = slot.rotation ?? 0;
+
+  // 图框像素尺寸
+  const slotPxW = (slot.w / 100) * canvasW;
+  const slotPxH = (slot.h / 100) * canvasH;
+
+  // 图片像素尺寸（优先用裁剪后的尺寸）
+  const imgW = asset.croppedDataUrl
+    ? (asset.cropRect?.width ?? asset.naturalWidth)
+    : asset.naturalWidth;
+  const imgH = asset.croppedDataUrl
+    ? (asset.cropRect?.height ?? asset.naturalHeight)
+    : asset.naturalHeight;
+
+  // 计算 cover 模式下图片的渲染尺寸（确保完全覆盖图框）
+  const imgAR = imgW / imgH;
+  const slotAR = slotPxW / slotPxH;
+  let renderW: number, renderH: number;
+  if (imgAR > slotAR) {
+    // 图片更宽：以高度为基准
+    renderH = slotPxH;
+    renderW = slotPxH * imgAR;
+  } else {
+    // 图片更高：以宽度为基准
+    renderW = slotPxW;
+    renderH = slotPxW / imgAR;
+  }
+
+  // 图片左上角偏移（相对于图框）：中居
+  const baseLeft = (slotPxW - renderW) / 2;
+  const baseTop = (slotPxH - renderH) / 2;
+
+  // 应用用户偏移（offsetX/offsetY 是相对于图框尺寸的百分比）
+  const userOffX = (offsetX / 100) * slotPxW;
+  const userOffY = (offsetY / 100) * slotPxH;
+
+  // 编辑模式下：显示图片边界提示框
+  const editBorderStyle = isEditMode ? {
+    outline: "1px dashed oklch(0.65 0.20 145 / 0.6)",
+    outlineOffset: 2,
+  } : {};
 
   return (
     <img
@@ -1070,16 +1157,18 @@ function AspectFillImage({
       draggable={false}
       style={{
         position: "absolute",
-        width: "100%",
-        height: "100%",
-        // cover 模式：图片铺满图框，保持比例
-        objectFit: "cover",
-        objectPosition: "center center",
-        // 应用平移、缩放、旋转
-        transform: `translate(${offsetX}%, ${offsetY}%) scale(${scale}) rotate(${rotation}deg)`,
+        // 使用计算出的真实 cover 尺寸（像素值）
+        width: renderW,
+        height: renderH,
+        // 居中 + 用户偏移
+        left: baseLeft + userOffX,
+        top: baseTop + userOffY,
+        // 应用缩放和旋转（以图片自身中心为原点）
+        transform: `scale(${scale}) rotate(${rotation}deg)`,
         transformOrigin: "center center",
         userSelect: "none",
         pointerEvents: "none",
+        ...editBorderStyle,
       }}
     />
   );
