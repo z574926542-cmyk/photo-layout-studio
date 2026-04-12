@@ -59,6 +59,7 @@ export default function RightPanel() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const [cropTarget, setCropTarget] = useState<Asset | null>(null);
+  const [hoveredAssetId, setHoveredAssetId] = useState<string | null>(null);
 
   // ─── 文件夹状态 ───────────────────────────────────────────
   const [folders, setFolders] = useState<AssetFolder[]>(loadFolders);
@@ -665,7 +666,7 @@ export default function RightPanel() {
                       if (el) itemRefs.current.set(asset.id, el);
                       else itemRefs.current.delete(asset.id);
                     }}
-                    className="relative group rounded-lg overflow-hidden"
+                    className="relative rounded-lg overflow-hidden"
                     style={{
                       aspectRatio: "1",
                       background: "oklch(0.18 0.015 260)",
@@ -678,6 +679,8 @@ export default function RightPanel() {
                       outline: isSelected ? "1px solid oklch(0.58 0.22 264 / 0.5)" : "none",
                       outlineOffset: "1px",
                     }}
+                    onMouseEnter={() => setHoveredAssetId(asset.id)}
+                    onMouseLeave={() => setHoveredAssetId(null)}
                     draggable
                     onDragStart={(e) => {
                       e.dataTransfer.setData("assetId", asset.id);
@@ -738,14 +741,16 @@ export default function RightPanel() {
                       </div>
                     )}
 
-                    {/* 悬停操作按鈕 - 图片内部右下角覆盖，hover 时显示 */}
+                    {/* 悬停操作按钮 - 图片内部右下角覆盖，hover 时显示 */}
                     {!isSelected && (
                       <div
-                        className="absolute opacity-0 group-hover:opacity-100 transition-all duration-150 flex flex-col gap-0.5"
+                        className="absolute flex flex-col gap-0.5 transition-opacity duration-150"
                         style={{
                           bottom: 4,
                           right: 4,
                           zIndex: 50,
+                          opacity: hoveredAssetId === asset.id ? 1 : 0,
+                          pointerEvents: hoveredAssetId === asset.id ? "auto" : "none",
                         }}
                         onClick={(e) => e.stopPropagation()}
                       >
