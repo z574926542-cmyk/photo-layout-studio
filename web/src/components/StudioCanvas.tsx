@@ -678,6 +678,7 @@ export default function StudioCanvas() {
           height: displayH,
           boxShadow: "0 12px 60px oklch(0 0 0 / 0.7), 0 4px 16px oklch(0 0 0 / 0.5)",
           outline: "1px solid oklch(1 0 0 / 0.1)",
+          overflow: "hidden",
         }}
         onMouseDown={handleMouseDown}
       >
