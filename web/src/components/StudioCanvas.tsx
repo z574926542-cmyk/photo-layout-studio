@@ -190,18 +190,21 @@ export default function StudioCanvas() {
       const slot = slots.find((s) => s.id === imageEditSlotId);
       if (!slot) return;
 
-      // 计算图框在屏幕上的像素尺寸
+      // 图框在屏幕上的像素尺寸
       const slotPxW = (slot.w / 100) * displayW;
       const slotPxH = (slot.h / 100) * displayH;
 
       // 鼠标移动量转换为百分比偏移（相对于图框尺寸）
+      // non-destructive cover crop 语义：offsetX/offsetY 是图片中心相对于图框中心的偶移
       const dxPx = e.clientX - imgDragRef.current.startClientX;
       const dyPx = e.clientY - imgDragRef.current.startClientY;
       const dxPct = (dxPx / slotPxW) * 100;
       const dyPct = (dyPx / slotPxH) * 100;
 
-      const newOffX = clamp(imgDragRef.current.initOffX + dxPct, -200, 200);
-      const newOffY = clamp(imgDragRef.current.initOffY + dyPct, -200, 200);
+      // 限制偏移范围：防止拖出层框外导致图框内出现空白
+      // 最大偏移 = (renderW - slotW) / 2 / slotW * 100，但这需要知道 scale，简化用大范围限制
+      const newOffX = clamp(imgDragRef.current.initOffX + dxPct, -300, 300);
+      const newOffY = clamp(imgDragRef.current.initOffY + dyPct, -300, 300);
 
       updateSlot(imageEditSlotId, {
         offsetX: round(newOffX, 2),
@@ -921,14 +924,10 @@ function SlotRenderer({
         <div
           className="absolute inset-0"
           style={{
-            overflow: "visible",
-            // 正常模式： clip-path inset(0) 裁剪图框范围内的内容（不受 transform 影响）
-            // 编辑模式：取消 clip-path，显示完整图片
-            clipPath: isImageEditMode
-              ? undefined
-              : radiusPx > 0
-                ? `inset(0 round ${radiusPx}px)`
-                : "inset(0)",
+            // 正常模式： overflow:hidden 裁剪超出图框的图片
+            // 编辑模式： overflow:visible 显示完整图片（包括溢出部分）
+            overflow: isImageEditMode ? "visible" : "hidden",
+            borderRadius: (!isImageEditMode && radiusPx > 0) ? `${radiusPx}px` : undefined,
           }}
         >
           <AspectFillImage asset={asset} slot={slot} canvasW={canvasW} canvasH={canvasH} isEditMode={isImageEditMode} />
@@ -1114,11 +1113,29 @@ function SlotRenderer({
     </div>
   );
 }
-// ─── 图片渲染（支持 offsetX/offsetY/scale/rotation）────
-// 重要设计原则：
-//   普通模式：图片按 cover 比例计算真实尺寸，位置居中。图框 overflow:hidden 裁剪显示。
-//   编辑模式：图框 overflow:visible，图片完整可见（包括溢出部分）。
-//   两种模式下图片的实际尺寸和位置完全一致，不会因模式切换而跳动。
+// ─── 图片渲染——标准 non-destructive cover crop 模型────
+//
+// 语义说明：
+//   1. 图片始终保留完整原图，不允许破坏式裁切
+//   2. 展示状态：图片按 cover 规则等比缩放并铺满图框
+//   3. 图框本质是 crop window / viewport，超出图框的部分仅隐藏
+//   4. 编辑状态：进入 pan + zoom 模式，显示完整图片边界
+//   5. 用户通过拖动和缩放图片来调整最终取景
+//   6. 最终保存的是 transform 参数，不是生成裁切后的新图
+//
+// 坐标系：
+//   - coverScale：使图片刚好 cover 图框所需的最小缩放倍数
+//   - slot.scale：在 coverScale 基准上的额外缩放（1.0 = 刚好 cover）
+//   - slot.offsetX/offsetY：图片中心相对于图框中心的偶移（相对于图框尺寸的百分比）
+//   - slot.rotation：旋转角度
+//
+// 渲染公式：
+//   图片以图框中心为原点放置，应用 coverScale * scale 后尺寸为：
+//     renderW = imgNaturalW * coverScale * scale
+//     renderH = imgNaturalH * coverScale * scale
+//   定位：
+//     left = slotCenterX - renderW/2 + offsetX_px
+//     top  = slotCenterY - renderH/2 + offsetY_px
 function AspectFillImage({
   asset,
   slot,
@@ -1132,108 +1149,66 @@ function AspectFillImage({
   canvasH: number;
   isEditMode: boolean;
 }) {
-  const displayUrl = asset.croppedDataUrl ?? asset.dataUrl;
-  const offsetX = slot.offsetX ?? 0;
-  const offsetY = slot.offsetY ?? 0;
-  const scale = slot.scale ?? 1;
+  const displayUrl = asset.dataUrl; // 始终使用原图，不使用 croppedDataUrl
+  const offsetX = slot.offsetX ?? 0; // 相对于图框宽度的百分比偏移
+  const offsetY = slot.offsetY ?? 0; // 相对于图框高度的百分比偏移
+  const userScale = slot.scale ?? 1; // 用户额外缩放（1.0 = 刚好 cover）
   const rotation = slot.rotation ?? 0;
 
-  // 用 useState 动态读取图片实际尺寸，避免 asset.naturalWidth 为 0 的问题
-  const [imgNaturalSize, setImgNaturalSize] = React.useState<{w: number; h: number} | null>(null);
+  // 图框实际像素尺寸
+  const slotPxW = (slot.w / 100) * canvasW;
+  const slotPxH = (slot.h / 100) * canvasH;
 
-  // 图片原始尺寸：优先用动态加载结果，其次用 asset 存储的尺寸
-  const imgW = imgNaturalSize?.w ?? (asset.croppedDataUrl
-    ? (asset.cropRect?.width ?? asset.naturalWidth)
-    : asset.naturalWidth);
-  const imgH = imgNaturalSize?.h ?? (asset.croppedDataUrl
-    ? (asset.cropRect?.height ?? asset.naturalHeight)
-    : asset.naturalHeight);
+  // 图片原始尺寸（始终用原图尺寸）
+  const imgW = asset.naturalWidth;
+  const imgH = asset.naturalHeight;
 
-  // 编辑模式下：显示图片边界提示框
-  const editBorderStyle = isEditMode ? {
-    outline: "1px dashed oklch(0.65 0.20 145 / 0.6)",
+  // 计算 coverScale：使图片刚好 cover 图框所需的最小缩放倍数
+  // 规则： max(宽度缩放比, 高度缩放比)，确保两个方向都不小于图框
+  let coverScale = 1;
+  if (imgW > 0 && imgH > 0 && slotPxW > 0 && slotPxH > 0) {
+    const scaleByW = slotPxW / imgW; // 以宽度为基准缩放
+    const scaleByH = slotPxH / imgH; // 以高度为基准缩放
+    coverScale = Math.max(scaleByW, scaleByH); // 取较大值，确保铺满
+  }
+
+  // 实际渲染尺寸 = 原图尺寸 * coverScale * 用户额外缩放
+  const totalScale = coverScale * userScale;
+  const renderW = imgW * totalScale;
+  const renderH = imgH * totalScale;
+
+  // 居中定位：图片以图框中心为原点放置
+  const baseLeft = (slotPxW - renderW) / 2;
+  const baseTop = (slotPxH - renderH) / 2;
+
+  // offsetX/offsetY 是相对于图框尺寸的百分比，转换为像素平移
+  const txPx = (offsetX / 100) * slotPxW;
+  const tyPx = (offsetY / 100) * slotPxH;
+
+  // 编辑模式下显示图片边界提示框
+  const editOutlineStyle = isEditMode ? {
+    outline: "2px dashed oklch(0.65 0.22 145 / 0.9)",
     outlineOffset: 2,
   } : {};
-
-  // 若尺寸无效（未加载完成或为0），渲染隐藏占位符，等待 onLoad 后再显示，避免畴变
-  if (!imgW || !imgH || imgW <= 0 || imgH <= 0) {
-    return (
-      <img
-        src={displayUrl}
-        alt={asset.name}
-        draggable={false}
-        onLoad={(e) => {
-          const img = e.currentTarget;
-          if (img.naturalWidth > 0 && img.naturalHeight > 0) {
-            setImgNaturalSize({ w: img.naturalWidth, h: img.naturalHeight });
-          }
-        }}
-        style={{
-          position: "absolute",
-          inset: 0,
-          width: "100%",
-          height: "100%",
-          objectFit: "cover",
-          objectPosition: "center",
-          opacity: 0, // 尺寸未确认前隐藏，避免畴变闪现
-          transform: `scale(${scale}) rotate(${rotation}deg)`,
-          transformOrigin: "center center",
-          userSelect: "none",
-          pointerEvents: "none",
-          ...editBorderStyle,
-        }}
-      />
-    );
-  }
-
-  // 图框的实际 DOM 尺寸由 CSS 百分比决定，不依赖外部传入的 canvasW/canvasH
-  // 用 slot.w/slot.h 的实际像素尺寸进行 cover 计算，需要用 useRef + getBoundingClientRect
-  // 但为简化，改用纯 CSS 方案：
-  // 利用 padding-top trick 或者直接用 CSS aspect-ratio + object-fit:cover
-  // 最可靠的方案：用 imgAR 和 slot 的实际尺寸比较，用百分比定位
-  const imgAR = imgW / imgH;
-  const slotAR = (slot.w * canvasW) / (slot.h * canvasH); // 图框纵横比
-
-  // cover 尺寸：以百分比表示（相对于图框宽高）
-  let renderWPct: number, renderHPct: number;
-  if (imgAR > slotAR) {
-    // 图片更宽：以高度为基准，宽度溢出
-    renderHPct = 100;
-    renderWPct = (imgAR / slotAR) * 100;
-  } else {
-    // 图片更高：以宽度为基准，高度溢出
-    renderWPct = 100;
-    renderHPct = (slotAR / imgAR) * 100;
-  }
-
-  // 居中偏移（百分比）
-  const baseLeftPct = (100 - renderWPct) / 2;
-  const baseTopPct = (100 - renderHPct) / 2;
 
   return (
     <img
       src={displayUrl}
       alt={asset.name}
       draggable={false}
-      onLoad={(e) => {
-        const img = e.currentTarget;
-        if (img.naturalWidth > 0 && img.naturalHeight > 0) {
-          setImgNaturalSize({ w: img.naturalWidth, h: img.naturalHeight });
-        }
-      }}
       style={{
         position: "absolute",
-        // 用百分比定位，完全跟随图框 DOM 实际尺寸，不受 canvasW/canvasH 误差影响
-        width: `${renderWPct}%`,
-        height: `${renderHPct}%`,
-        left: `${baseLeftPct + offsetX}%`,
-        top: `${baseTopPct + offsetY}%`,
-        // 应用缩放和旋转（以图片自身中心为原点）
-        transform: `scale(${scale}) rotate(${rotation}deg)`,
+        // 用像素定位，完全不依赖 CSS 百分比计算基准
+        left: baseLeft + txPx,
+        top: baseTop + tyPx,
+        width: renderW,
+        height: renderH,
+        // 旋转（以图片自身中心为原点）
+        transform: rotation !== 0 ? `rotate(${rotation}deg)` : undefined,
         transformOrigin: "center center",
         userSelect: "none",
         pointerEvents: "none",
-        ...editBorderStyle,
+        ...editOutlineStyle,
       }}
     />
   );

@@ -718,129 +718,170 @@ export default function RightPanel() {
                       </div>
                     )}
 
-                    {/* 悬停操作菜单 - 底部操作栏 + 顶部快捷按钮 */}
+                    {/* 底部文件名 + 尺寸（常显，渐变遮罩） */}
                     {!isSelected && (
-                      <>
-                        {/* 顶部快捷操作行：填入 + 填充全部 */}
-                        <div
-                          className="absolute top-0 left-0 right-0 flex gap-1 p-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150"
-                          style={{ background: "linear-gradient(oklch(0.08 0.01 260 / 0.9), transparent)" }}
-                        >
-                          <button
-                            onClick={(e) => { e.stopPropagation(); handleFillClick(asset.id); }}
-                            className="flex-1 py-1 rounded font-medium text-center"
-                            style={{ background: selectedSlotId ? "oklch(0.58 0.22 264)" : "oklch(0.45 0.15 264 / 0.8)", color: "white", fontSize: "0.6rem", lineHeight: 1.2 }}
-                            title={selectedSlotId ? "填入选中框" : "先选中一个图框"}
-                          >
-                            {selectedSlotId ? "填入选中框" : "选框后填入"}
-                          </button>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); if (slots.length > 0) fillAllSlots(asset.id); }}
-                            disabled={slots.length === 0}
-                            className="flex-1 py-1 rounded font-medium text-center disabled:opacity-40"
-                            style={{ background: "oklch(0.50 0.20 280 / 0.85)", color: "white", fontSize: "0.6rem", lineHeight: 1.2 }}
-                            title="填充全部图框"
-                          >
-                            填充全部
-                          </button>
-                        </div>
-
-                        {/* 底部操作行：文件名 + 功能图标 */}
-                        <div
-                          className="absolute bottom-0 left-0 right-0 px-1.5 pt-3 pb-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150"
-                          style={{ background: "linear-gradient(transparent, oklch(0.08 0.01 260 / 0.92))" }}
-                        >
-                          {/* 文件名 */}
-                          <div className="truncate mb-1" style={{ color: "oklch(0.90 0.005 260)", fontSize: "0.6rem" }}>
-                            {asset.name}
-                          </div>
-                          {/* 功能图标行 */}
-                          <div className="flex items-center gap-1">
-                            {/* 编辑/裁剪 */}
-                            <button
-                              onClick={(e) => { e.stopPropagation(); setCropTarget(asset); }}
-                              className="flex items-center justify-center rounded"
-                              style={{ background: asset.cropRect ? "oklch(0.62 0.20 45 / 0.9)" : "oklch(0.40 0.12 45 / 0.8)", color: "white", width: 22, height: 22 }}
-                              title={asset.cropRect ? "重新编辑" : "编辑图片"}
-                            >
-                              <Crop size={11} />
-                            </button>
-                            {/* 添加为装饰层 */}
-                            <button
-                              onClick={(e) => { e.stopPropagation(); addOverlayFromDataUrl(asset.croppedDataUrl ?? asset.dataUrl, asset.name); }}
-                              className="flex items-center justify-center rounded"
-                              style={{ background: "oklch(0.45 0.18 55 / 0.8)", color: "white", width: 22, height: 22 }}
-                              title="添加为装饰层"
-                            >
-                              <svg width="11" height="11" viewBox="0 0 10 10" fill="none">
-                                <rect x="0.5" y="0.5" width="9" height="9" rx="1.5" stroke="currentColor" strokeWidth="1" fill="none"/>
-                                <path d="M5 3v4M3 5h4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
-                              </svg>
-                            </button>
-                            {/* 移出图框（仅当已填入时显示） */}
-                            {isUsed && (
-                              <button
-                                onClick={(e) => { e.stopPropagation(); unfillSlot(usedInSlot!.id); }}
-                                className="flex items-center justify-center rounded"
-                                style={{ background: "oklch(0.55 0.20 25 / 0.85)", color: "white", width: 22, height: 22 }}
-                                title="移出图框"
-                              >
-                                <svg width="11" height="11" viewBox="0 0 10 10" fill="none">
-                                  <path d="M2 2l6 6M8 2l-6 6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
-                                </svg>
-                              </button>
-                            )}
-                            {/* 移出文件夹 */}
-                            {currentFolderId && (
-                              <button
-                                onClick={(e) => { e.stopPropagation(); removeFromFolder(asset.id); }}
-                                className="flex items-center justify-center rounded"
-                                style={{ background: "oklch(0.28 0.015 260 / 0.8)", color: "oklch(0.65 0.01 260)", width: 22, height: 22, fontSize: "0.5rem" }}
-                                title="移出文件夹"
-                              >
-                                <svg width="11" height="11" viewBox="0 0 10 10" fill="none">
-                                  <path d="M1.5 3h7l-.7 5H2.2L1.5 3z" stroke="currentColor" strokeWidth="0.9" fill="none"/>
-                                  <path d="M3.5 1.5h3l.5 1.5h-4L3.5 1.5z" stroke="currentColor" strokeWidth="0.9" fill="none"/>
-                                </svg>
-                              </button>
-                            )}
-                            {/* 尺寸信息 */}
-                            <span className="ml-auto" style={{ color: "oklch(0.55 0.01 260)", fontSize: "0.5rem", fontFamily: "monospace" }}>
-                              {asset.naturalWidth}×{asset.naturalHeight}
-                            </span>
-                          </div>
-                        </div>
-                      </>
-                    )}
-
-                    {/* 删除按钮 */}
-                    {!isSelected && (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); removeAsset(asset.id); }}
-                        className="absolute top-1 right-1 w-5 h-5 rounded flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                        style={{ background: "oklch(0.62 0.22 25 / 0.9)" }}
+                      <div
+                        className="absolute bottom-0 left-0 right-0 px-1.5 py-1 pointer-events-none"
+                        style={{ background: "linear-gradient(transparent, oklch(0.08 0.01 260 / 0.88))", color: "oklch(0.85 0.005 260)", fontSize: "0.6rem" }}
                       >
-                        <X size={10} style={{ color: "white" }} />
-                      </button>
+                        <div className="truncate">{asset.name}</div>
+                        <div style={{ color: "oklch(0.55 0.01 260)", fontSize: "0.52rem", fontFamily: "monospace" }}>
+                          {asset.naturalWidth}×{asset.naturalHeight}
+                        </div>
+                      </div>
                     )}
 
                     {/* 已填标记 */}
                     {isUsed && !isSelected && (
-                      <div className="absolute bottom-1 left-1 pointer-events-none">
-                        <CheckCircle2 size={13} style={{ color: "oklch(0.65 0.18 145)" }} />
+                      <div className="absolute top-1 left-1 pointer-events-none">
+                        <CheckCircle2 size={12} style={{ color: "oklch(0.65 0.18 145)" }} />
                       </div>
                     )}
 
-                    {/* 图片信息 */}
+                    {/* 悬停操作菜单 - 鼠标靠近时在图片右侧弹出竖列按鈕 */}
                     {!isSelected && (
                       <div
-                        className="absolute bottom-0 left-0 right-0 px-1.5 py-1 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity"
-                        style={{ background: "linear-gradient(transparent, oklch(0.10 0.01 260 / 0.9))", color: "oklch(0.85 0.005 260)", fontSize: "0.6rem" }}
+                        className="absolute opacity-0 group-hover:opacity-100 transition-all duration-150 flex flex-col gap-1"
+                        style={{
+                          top: "50%",
+                          left: "calc(100% + 5px)",
+                          transform: "translateY(-50%)",
+                          zIndex: 50,
+                        }}
+                        onClick={(e) => e.stopPropagation()}
                       >
-                        <div className="truncate">{asset.name}</div>
-                        <div style={{ color: "oklch(0.60 0.01 260)", fontSize: "0.55rem", fontFamily: "monospace" }}>
-                          {asset.naturalWidth}×{asset.naturalHeight}
-                        </div>
+                        {/* 填入选中框 */}
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleFillClick(asset.id); }}
+                          className="flex items-center justify-center rounded"
+                          style={{
+                            background: selectedSlotId ? "oklch(0.58 0.22 264)" : "oklch(0.30 0.10 264 / 0.95)",
+                            color: "white",
+                            width: 26,
+                            height: 26,
+                            border: "1px solid oklch(0.58 0.22 264 / 0.4)",
+                            boxShadow: "0 2px 8px oklch(0 0 0 / 0.5)",
+                          }}
+                          title={selectedSlotId ? "填入选中框" : "先选中一个图框"}
+                        >
+                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                            <rect x="1" y="1" width="10" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.2" fill="none"/>
+                            <path d="M4 6h4M6 4v4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+                          </svg>
+                        </button>
+
+                        {/* 填充全部 */}
+                        <button
+                          onClick={(e) => { e.stopPropagation(); if (slots.length > 0) fillAllSlots(asset.id); }}
+                          disabled={slots.length === 0}
+                          className="flex items-center justify-center rounded disabled:opacity-40"
+                          style={{
+                            background: "oklch(0.45 0.20 280 / 0.95)",
+                            color: "white",
+                            width: 26,
+                            height: 26,
+                            border: "1px solid oklch(0.50 0.20 280 / 0.4)",
+                            boxShadow: "0 2px 8px oklch(0 0 0 / 0.5)",
+                          }}
+                          title="填充全部图框"
+                        >
+                          <Zap size={11} />
+                        </button>
+
+                        {/* 编辑/裁剪 */}
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setCropTarget(asset); }}
+                          className="flex items-center justify-center rounded"
+                          style={{
+                            background: asset.cropRect ? "oklch(0.58 0.20 45 / 0.95)" : "oklch(0.35 0.10 45 / 0.95)",
+                            color: "white",
+                            width: 26,
+                            height: 26,
+                            border: "1px solid oklch(0.62 0.20 45 / 0.4)",
+                            boxShadow: "0 2px 8px oklch(0 0 0 / 0.5)",
+                          }}
+                          title={asset.cropRect ? "重新编辑" : "编辑图片"}
+                        >
+                          <Crop size={11} />
+                        </button>
+
+                        {/* 添加为装饰层 */}
+                        <button
+                          onClick={(e) => { e.stopPropagation(); addOverlayFromDataUrl(asset.croppedDataUrl ?? asset.dataUrl, asset.name); }}
+                          className="flex items-center justify-center rounded"
+                          style={{
+                            background: "oklch(0.40 0.18 55 / 0.95)",
+                            color: "white",
+                            width: 26,
+                            height: 26,
+                            border: "1px solid oklch(0.62 0.18 55 / 0.4)",
+                            boxShadow: "0 2px 8px oklch(0 0 0 / 0.5)",
+                          }}
+                          title="添加为装饰层"
+                        >
+                          <svg width="11" height="11" viewBox="0 0 10 10" fill="none">
+                            <rect x="0.5" y="0.5" width="9" height="9" rx="1.5" stroke="currentColor" strokeWidth="1" fill="none"/>
+                            <path d="M5 3v4M3 5h4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+                          </svg>
+                        </button>
+
+                        {/* 移出图框（仅已填入时显示） */}
+                        {isUsed && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); unfillSlot(usedInSlot!.id); }}
+                            className="flex items-center justify-center rounded"
+                            style={{
+                              background: "oklch(0.50 0.20 25 / 0.95)",
+                              color: "white",
+                              width: 26,
+                              height: 26,
+                              border: "1px solid oklch(0.55 0.20 25 / 0.4)",
+                              boxShadow: "0 2px 8px oklch(0 0 0 / 0.5)",
+                            }}
+                            title="移出图框"
+                          >
+                            <X size={11} />
+                          </button>
+                        )}
+
+                        {/* 移出文件夹 */}
+                        {currentFolderId && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); removeFromFolder(asset.id); }}
+                            className="flex items-center justify-center rounded"
+                            style={{
+                              background: "oklch(0.25 0.015 260 / 0.95)",
+                              color: "oklch(0.65 0.01 260)",
+                              width: 26,
+                              height: 26,
+                              border: "1px solid oklch(0.35 0.01 260 / 0.4)",
+                              boxShadow: "0 2px 8px oklch(0 0 0 / 0.5)",
+                            }}
+                            title="移出文件夹"
+                          >
+                            <svg width="11" height="11" viewBox="0 0 10 10" fill="none">
+                              <path d="M1.5 3h7l-.7 5H2.2L1.5 3z" stroke="currentColor" strokeWidth="0.9" fill="none"/>
+                              <path d="M3.5 1.5h3l.5 1.5h-4L3.5 1.5z" stroke="currentColor" strokeWidth="0.9" fill="none"/>
+                            </svg>
+                          </button>
+                        )}
+
+                        {/* 删除图片 */}
+                        <button
+                          onClick={(e) => { e.stopPropagation(); removeAsset(asset.id); }}
+                          className="flex items-center justify-center rounded"
+                          style={{
+                            background: "oklch(0.50 0.22 25 / 0.95)",
+                            color: "white",
+                            width: 26,
+                            height: 26,
+                            border: "1px solid oklch(0.62 0.22 25 / 0.4)",
+                            boxShadow: "0 2px 8px oklch(0 0 0 / 0.5)",
+                          }}
+                          title="删除图片"
+                        >
+                          <Trash2 size={11} />
+                        </button>
                       </div>
                     )}
                   </div>

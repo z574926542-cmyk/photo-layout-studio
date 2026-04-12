@@ -187,9 +187,11 @@ export async function exportCanvasToPng(
     const slotW = (slot.w / 100) * canvasWidth;
     const slotH = (slot.h / 100) * canvasHeight;
 
-    // 使用裁剪后的图片（如有），否则用原图
-    const displayUrl = getAssetDisplayUrl(asset);
-    const displaySize = getAssetDisplaySize(asset);
+    // non-destructive cover crop 导出逻辑（与预览完全一致）
+    // 始终使用原图，通过 coverScale 计算铺满图框
+    const displayUrl = asset.dataUrl; // 始终用原图
+    const imgNaturalW = asset.naturalWidth;
+    const imgNaturalH = asset.naturalHeight;
 
     await new Promise<void>((resolve) => {
       const img = new Image();
@@ -203,7 +205,6 @@ export async function exportCanvasToPng(
           if (typeof ctx.roundRect === 'function') {
             ctx.roundRect(slotX, slotY, slotW, slotH, radius);
           } else {
-            // 降级：手动绘制圆角矩形
             const r = radius;
             ctx.moveTo(slotX + r, slotY);
             ctx.lineTo(slotX + slotW - r, slotY);
@@ -221,37 +222,31 @@ export async function exportCanvasToPng(
         }
         ctx.clip();
 
-        // cover 模式：图片铺满图框，保持比例
-        const imgAR = displaySize.width / displaySize.height;
-        const slotAR = slotW / slotH;
-        let drawW: number, drawH: number;
-        if (imgAR > slotAR) {
-          // 图片更宽：以高度为基准
-          drawH = slotH;
-          drawW = slotH * imgAR;
-        } else {
-          // 图片更高：以宽度为基准
-          drawW = slotW;
-          drawH = slotW / imgAR;
-        }
+        // 计算 coverScale：使原图刚好 cover 图框所需的最小缩放倍数
+        const scaleByW = slotW / imgNaturalW;
+        const scaleByH = slotH / imgNaturalH;
+        const coverScale = Math.max(scaleByW, scaleByH);
 
-        // 应用 offsetX/offsetY/scale/rotation
+        // 应用用户额外缩放和偏移
         const offsetX = slot.offsetX ?? 0;
         const offsetY = slot.offsetY ?? 0;
-        const scale = slot.scale ?? 1;
+        const userScale = slot.scale ?? 1;
         const rotation = slot.rotation ?? 0;
 
-        // 中心点
+        const totalScale = coverScale * userScale;
+        const drawW = imgNaturalW * totalScale;
+        const drawH = imgNaturalH * totalScale;
+
+        // 图框中心点
         const cx = slotX + slotW / 2;
         const cy = slotY + slotH / 2;
 
-        ctx.translate(cx, cy);
-        ctx.rotate((rotation * Math.PI) / 180);
-        ctx.scale(scale, scale);
-        ctx.translate(
-          (offsetX / 100) * slotW,
-          (offsetY / 100) * slotH
-        );
+        // 平移量：offsetX/offsetY 相对于图框尺寸的百分比
+        const txPx = (offsetX / 100) * slotW;
+        const tyPx = (offsetY / 100) * slotH;
+
+        ctx.translate(cx + txPx, cy + tyPx);
+        if (rotation !== 0) ctx.rotate((rotation * Math.PI) / 180);
 
         ctx.drawImage(img, -drawW / 2, -drawH / 2, drawW, drawH);
         ctx.restore();
