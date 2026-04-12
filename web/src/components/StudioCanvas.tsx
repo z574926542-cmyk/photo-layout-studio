@@ -322,9 +322,10 @@ export default function StudioCanvas() {
         return;
       }
 
-      // 图片调节模式下：点击其他图框 → 退出当前调节模式，选中新图框
+      // 图片调节模式下：点击其他图框 → 忽略，不退出编辑模式
+      // 只有点击画布空白区域（handleMouseDown）才退出
       if (imageEditSlotId && imageEditSlotId !== slot.id) {
-        exitImageEdit();
+        return;
       }
 
       if (e.shiftKey) {
@@ -361,10 +362,9 @@ export default function StudioCanvas() {
         setIsDragging(true);
       }
     },
-    [mode, getCanvasPct, selectSlot, selectSlots, selectedSlotIds, slots, imageEditSlotId, exitImageEdit]
+    [mode, getCanvasPct, selectSlot, selectSlots, selectedSlotIds, slots, imageEditSlotId]
   );
-
-  // ─── 图框双击（进入图片调节模式） ────────────────────────
+  // ─── 图框双击（进入图片调节模式）） ────────────────────────
   const handleSlotDoubleClick = useCallback(
     (e: React.MouseEvent, slot: Slot) => {
       e.stopPropagation();
