@@ -425,8 +425,8 @@ function SlotSection() {
             <div className="text-xs mb-1" style={{ color: "oklch(0.55 0.015 260)" }}>缩放</div>
             <input
               type="range"
-              min={0.5}
-              max={3}
+              min={0.1}
+              max={10}
               step={0.05}
               value={selectedSlot.scale}
               onChange={(e) => handleScaleChange(e.target.value)}

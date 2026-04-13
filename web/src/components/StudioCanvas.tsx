@@ -989,6 +989,7 @@ export default function StudioCanvas() {
             onDrop={handleSlotDrop}
             onDragOver={handleSlotDragOver}
             onUnfill={() => unfillSlot(slot.id)}
+            updateSlot={updateSlot}
           />
         ))}
 
@@ -1147,8 +1148,8 @@ interface SlotRendererProps {
   onDrop: (e: React.DragEvent, slotId: string) => void;
   onDragOver: (e: React.DragEvent) => void;
   onUnfill: () => void;
+  updateSlot: (id: string, patch: Partial<Slot>) => void;
 }
-
 function SlotRenderer({
   slot,
   asset,
@@ -1167,10 +1168,17 @@ function SlotRenderer({
   onDrop,
   onDragOver,
   onUnfill,
+  updateSlot,
 }: SlotRendererProps) {
   const hasFill = !!asset;
   // 图片实际位置和尺寸（由 AspectFillImage 回调更新）
+  // 同时用 ref 存储，确保 onMouseDown 闭包中读到最新值（避免 stale closure）
   const [imgRect, setImgRect] = React.useState<{ left: number; top: number; renderW: number; renderH: number; baseScale: number } | null>(null);
+  const imgRectRef = React.useRef<{ left: number; top: number; renderW: number; renderH: number; baseScale: number } | null>(null);
+  const handleImgRectUpdate = React.useCallback((rect: { left: number; top: number; renderW: number; renderH: number; baseScale: number }) => {
+    imgRectRef.current = rect;
+    setImgRect(rect);
+  }, []);
   // 圆角像素値：基于短边计算，确保四角均匀
   // slot.borderRadius 是 0~50 的百分比，转换为短边的对应像素值
   const slotPxW = (slot.w / 100) * canvasW;
@@ -1232,7 +1240,7 @@ function SlotRenderer({
       {/* 图片填充：直接相对 slot div 定位，无中间层 */}
       {asset && (
         <>
-          <AspectFillImage asset={asset} slot={slot} canvasW={canvasW} canvasH={canvasH} isEditMode={isImageEditMode} onImgRect={isImageEditMode ? setImgRect : undefined} />
+          <AspectFillImage asset={asset} slot={slot} canvasW={canvasW} canvasH={canvasH} isEditMode={isImageEditMode} onImgRect={isImageEditMode ? handleImgRectUpdate : undefined} />
           {/* 图片调节模式标识角标：图框标签（蓝色） */}
           {isImageEditMode && (
             <div
@@ -1355,7 +1363,7 @@ function SlotRenderer({
               borderRadius: 2,
               boxShadow: "0 0 0 1px oklch(0.72 0.20 55 / 0.5)",
             }}
-            onMouseDown={(e) => { e.stopPropagation(); onImgScaleMouseDown(e, slot, handle, imgRect); }}
+            onMouseDown={(e) => { e.stopPropagation(); const r = imgRectRef.current ?? imgRect; if (r) onImgScaleMouseDown(e, slot, handle, r); }}
             title="拖动缩放图片"
           />
         );
@@ -1456,27 +1464,28 @@ function SlotRenderer({
 }
 // ─── 图片渲染——标准 non-destructive cover crop 模型────
 //
-// 语义说明：
+// 设计原则：
 //   1. 图片始终保留完整原图，不允许破坏式裁切
-//   2. 展示状态：图片按 cover 规则等比缩放并铺满图框
+//   2. 展示状态：图片按像素级 cover 规则等比缩放并铺满图框
 //   3. 图框本质是 crop window / viewport，超出图框的部分仅隐藏
-//   4. 编辑状态：进入 pan + zoom 模式，显示完整图片边界
+//   4. 编辑状态：进入 pan + zoom 模式，显示完整图片边界（overflow:visible）
 //   5. 用户通过拖动和缩放图片来调整最终取景
 //   6. 最终保存的是 transform 参数，不是生成裁切后的新图
 //
-// 坐标系：
-//   - coverScale：使图片刚好 cover 图框所需的最小缩放倍数
-//   - slot.scale：在 coverScale 基准上的额外缩放（1.0 = 刚好 cover）
-//   - slot.offsetX/offsetY：图片中心相对于图框中心的偶移（相对于图框尺寸的百分比）
-//   - slot.rotation：旋转角度
+// 坐标系（全部为屏幕像素，与图框 div 坐标系一致）：
+//   slotPxW = slot.w/100 * canvasW  （canvasW = canvas.logicalWidth * zoom）
+//   slotPxH = slot.h/100 * canvasH
+//   coverScale = max(slotPxW / imgNW, slotPxH / imgNH)
+//   renderW = imgNW * coverScale * userScale
+//   renderH = imgNH * coverScale * userScale
+//   imgLeft = slotPxW/2 + offsetX/100*slotPxW - renderW/2
+//   imgTop  = slotPxH/2 + offsetY/100*slotPxH - renderH/2
 //
-// 渲染公式：
-//   图片以图框中心为原点放置，应用 coverScale * scale 后尺寸为：
-//     renderW = imgNaturalW * coverScale * scale
-//     renderH = imgNaturalH * coverScale * scale
-//   定位：
-//     left = slotCenterX - renderW/2 + offsetX_px
-//     top  = slotCenterY - renderH/2 + offsetY_px
+// 关键约束：
+//   - img 的 width/height 必须是像素值，绝不使用 "100%" / "auto"
+//   - img 必须设置 maxWidth:none / maxHeight:none 覆盖 Tailwind preflight
+//   - 图片未加载时（imgNW=0）用 visibility:hidden 隐藏，不渲染任何尺寸
+//   - 编辑态不依赖 overflow:hidden 做裁切，控制点显示在图片实际边界
 function AspectFillImage({
   asset,
   slot,
@@ -1487,73 +1496,75 @@ function AspectFillImage({
 }: {
   asset: import("@/lib/types").Asset;
   slot: Slot;
-  canvasW: number;
-  canvasH: number;
+  canvasW: number;  // 屏幕像素宽（canvas.logicalWidth * zoom）
+  canvasH: number;  // 屏幕像素高（canvas.logicalHeight * zoom）
   isEditMode: boolean;
   onImgRect?: (rect: { left: number; top: number; renderW: number; renderH: number; baseScale: number }) => void;
 }) {
-  // ── 用 state 追踪图片真实尺寸（防止 asset.naturalWidth/Height 为 0 的情况）──
-  // 当 asset.naturalWidth > 0 时直接用，否则等 onLoad 后更新
+  // ── 追踪图片真实尺寸（防止 asset.naturalWidth/Height 为 0）──────────────
   const [loadedSize, setLoadedSize] = React.useState<{ w: number; h: number } | null>(
     asset.naturalWidth > 0 && asset.naturalHeight > 0
       ? { w: asset.naturalWidth, h: asset.naturalHeight }
       : null
   );
-  // asset 变化时重置（切换图片）
+  // asset 切换时重置
   const prevAssetId = React.useRef<string>(asset.id);
   if (prevAssetId.current !== asset.id) {
     prevAssetId.current = asset.id;
-    if (asset.naturalWidth > 0 && asset.naturalHeight > 0) {
-      // 同步更新，避免闪烁（React 18 batching 会合并）
-      setLoadedSize({ w: asset.naturalWidth, h: asset.naturalHeight });
-    } else {
-      setLoadedSize(null);
-    }
+    setLoadedSize(
+      asset.naturalWidth > 0 && asset.naturalHeight > 0
+        ? { w: asset.naturalWidth, h: asset.naturalHeight }
+        : null
+    );
   }
 
-  const offsetX = slot.offsetX ?? 0; // 相对于图框宽度的百分比偏移（0=居中）
-  const offsetY = slot.offsetY ?? 0; // 相对于图框高度的百分比偏移（0=居中）
-  const userScale = slot.scale ?? 1; // 用户额外缩放（1.0 = 刚好 cover）
-  const rotation = slot.rotation ?? 0;
+  const offsetX  = slot.offsetX  ?? 0;  // 图片中心相对图框中心的水平偏移（图框宽度的百分比）
+  const offsetY  = slot.offsetY  ?? 0;  // 图片中心相对图框中心的垂直偏移（图框高度的百分比）
+  const userScale = slot.scale   ?? 1;  // 用户额外缩放（1.0 = 刚好 cover）
+  const rotation  = slot.rotation ?? 0;
 
-  // 图框实际像素尺寸
-  const slotW = (slot.w / 100) * canvasW;
-  const slotH = (slot.h / 100) * canvasH;
+  // ── 图框屏幕像素尺寸（与图框 div 的 CSS 尺寸完全一致）──────────────────
+  const slotPxW = (slot.w / 100) * canvasW;
+  const slotPxH = (slot.h / 100) * canvasH;
 
-  // 图片原始尺寸：优先用 asset 存储的值，fallback 用 onLoad 获取的值
-  const imgW = asset.naturalWidth > 0 ? asset.naturalWidth : (loadedSize?.w ?? 0);
-  const imgH = asset.naturalHeight > 0 ? asset.naturalHeight : (loadedSize?.h ?? 0);
+  // ── 图片原始像素尺寸（优先用 asset 存储值，fallback 用 onLoad 获取值）──
+  const imgNW = asset.naturalWidth  > 0 ? asset.naturalWidth  : (loadedSize?.w ?? 0);
+  const imgNH = asset.naturalHeight > 0 ? asset.naturalHeight : (loadedSize?.h ?? 0);
 
-  // ── 唯一 cover 公式 ──────────────────────────────────────────────────────
-  // baseScale = max(slotW / imgW, slotH / imgH)
-  // 确保图片两个方向都不小于图框（铺满图框，裁切多余部分）
-  let baseScale = 1;
-  if (imgW > 0 && imgH > 0 && slotW > 0 && slotH > 0) {
-    baseScale = Math.max(slotW / imgW, slotH / imgH);
+  // ── 像素级 cover 公式 ─────────────────────────────────────────────────────
+  // coverScale = max(slotPxW/imgNW, slotPxH/imgNH)
+  // 保证图片两个方向都不小于图框（铺满图框，超出部分被 overflow:hidden 裁切）
+  // 注意：coverScale 是「屏幕像素 / 原始像素」的比值，不受 zoom 影响（两者同比缩放）
+  let coverScale = 1;
+  if (imgNW > 0 && imgNH > 0 && slotPxW > 0 && slotPxH > 0) {
+    coverScale = Math.max(slotPxW / imgNW, slotPxH / imgNH);
   }
 
-  const renderScale = baseScale * userScale;
-  const renderW = imgW * renderScale;
-  const renderH = imgH * renderScale;
+  // 最终渲染尺寸（屏幕像素）
+  const renderW = imgNW * coverScale * userScale;
+  const renderH = imgNH * coverScale * userScale;
 
   // ── 中心对中心定位 ────────────────────────────────────────────────────────
-  // imgCenterX = slotW/2 + offsetX * slotW
-  // imgCenterY = slotH/2 + offsetY * slotH
-  // imgLeft = imgCenterX - renderW/2
-  // imgTop  = imgCenterY - renderH/2
-  const imgCenterX = slotW / 2 + (offsetX / 100) * slotW;
-  const imgCenterY = slotH / 2 + (offsetY / 100) * slotH;
-  const imgLeft = imgCenterX - renderW / 2;
-  const imgTop = imgCenterY - renderH / 2;
-  // 图片位置变化时通知父组件（用于显示缩放手柄）
+  // 图片中心 = 图框中心 + 偏移量
+  // imgLeft = (slotPxW/2 + offsetX/100*slotPxW) - renderW/2
+  const imgCenterX = slotPxW / 2 + (offsetX / 100) * slotPxW;
+  const imgCenterY = slotPxH / 2 + (offsetY / 100) * slotPxH;
+  const imgLeft    = imgCenterX - renderW / 2;
+  const imgTop     = imgCenterY - renderH / 2;
+
+  // ── 通知父组件图片实际位置（用于编辑态控制点定位）────────────────────────
   React.useEffect(() => {
     if (isEditMode && onImgRect && renderW > 0 && renderH > 0) {
-      onImgRect({ left: imgLeft, top: imgTop, renderW, renderH, baseScale });
+      onImgRect({ left: imgLeft, top: imgTop, renderW, renderH, baseScale: coverScale });
     }
-  }, [isEditMode, onImgRect, imgLeft, imgTop, renderW, renderH, baseScale]);
-  // 编辑模式下显示图片边界提示框（橙色虚线，与图框蓝色区分）
+  }, [isEditMode, onImgRect, imgLeft, imgTop, renderW, renderH, coverScale]);
+
+  // 图片未加载时隐藏（不用 width:100%/height:auto，避免 CSS 默认行为干扰）
+  const notReady = imgNW === 0 || imgNH === 0;
+
+  // 编辑模式橙色虚线边框
   const editOutlineStyle = isEditMode ? {
-    outline: "2px dashed oklch(0.75 0.20 55 / 0.95)",  // 橙色虚线：表示可拖动的图片内容
+    outline: "2px dashed oklch(0.75 0.20 55 / 0.95)",
     outlineOffset: 2,
   } : {};
 
@@ -1564,36 +1575,44 @@ function AspectFillImage({
         alt={asset.name}
         draggable={false}
         onLoad={(e) => {
-          // 当 asset.naturalWidth 为 0 时（图片尚未被浏览器缓存），从 img 元素获取真实尺寸
           const el = e.currentTarget as HTMLImageElement;
           if (el.naturalWidth > 0 && el.naturalHeight > 0) {
             setLoadedSize({ w: el.naturalWidth, h: el.naturalHeight });
           }
         }}
         style={{
+          // ── 像素级绝对定位，完全脱离 CSS 流 ──────────────────────────────
           position: "absolute",
-          // 用像素定位，完全不依赖 CSS 百分比计算基准
-          left: imgLeft,
-          top: imgTop,
-          width: renderW > 0 ? renderW : "100%",
-          height: renderH > 0 ? renderH : "100%",
+          left: notReady ? 0 : imgLeft,
+          top:  notReady ? 0 : imgTop,
+          // 严格用像素值，绝不用 "100%" 或 "auto"
+          // 否则 Tailwind preflight 的 max-width:100%/height:auto 会干扰尺寸
+          width:  notReady ? 0 : renderW,
+          height: notReady ? 0 : renderH,
+          // 覆盖 Tailwind preflight：img { max-width:100%; height:auto }
+          // 这两条规则优先级低于 inline style，但显式声明更安全
+          maxWidth:  "none",
+          maxHeight: "none",
+          // 图片未加载时完全隐藏，避免 0 尺寸时的布局抖动
+          visibility: notReady ? "hidden" : "visible",
           // 旋转（以图片自身中心为原点）
           transform: rotation !== 0 ? `rotate(${rotation}deg)` : undefined,
           transformOrigin: "center center",
           userSelect: "none",
           pointerEvents: "none",
+          // 编辑态橙色虚线边框
           ...editOutlineStyle,
         }}
       />
-      {/* 编辑模式下图片标签（橙色，与图框蓝色区分） */}
-      {isEditMode && renderW > 0 && renderH > 0 && (
+      {/* 编辑模式：图片尺寸标签（橙色，显示在图片右下角） */}
+      {isEditMode && !notReady && (
         <div
           className="pointer-events-none"
           style={{
             position: "absolute",
-            left: imgLeft + renderW - 2,  // 图片右下角
-            top: imgTop + renderH - 2,
-            transform: "translate(-100%, -100%)",  // 向左上偏移，使标签在图片右下角内部
+            left: imgLeft + renderW - 2,
+            top:  imgTop  + renderH - 2,
+            transform: "translate(-100%, -100%)",
             background: "oklch(0.40 0.20 55 / 0.92)",
             border: "1px solid oklch(0.75 0.20 55 / 0.6)",
             borderRadius: 3,
@@ -1607,7 +1626,7 @@ function AspectFillImage({
             whiteSpace: "nowrap",
           }}
         >
-          图片
+          {Math.round(renderW / coverScale)} × {Math.round(renderH / coverScale)} px
         </div>
       )}
     </>
