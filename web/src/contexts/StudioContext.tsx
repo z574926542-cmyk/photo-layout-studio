@@ -551,7 +551,7 @@ function reducer(state: StudioState, action: Action): StudioState {
 
     // ─── Overlay ───────────────────────────────────────────────────────────
     case "ADD_OVERLAY":
-      return { ...state, overlays: [...state.overlays, action.overlay], selectedOverlayId: action.overlay.id, selectedSlotId: null, selectedSlotIds: [] };
+      return { ...state, overlays: [...state.overlays, action.overlay] };
 
     case "UPDATE_OVERLAY": {
       const newOverlays = state.overlays.map((o) =>

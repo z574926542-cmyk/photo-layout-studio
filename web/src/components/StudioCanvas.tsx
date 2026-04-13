@@ -1729,6 +1729,8 @@ function OverlayRenderer({
   const HANDLE_SIZE = Math.max(6, Math.min(10, 8 / zoom));
   const resizeHandles: ResizeHandle[] = ["nw", "ne", "se", "sw", "n", "s", "e", "w"];
 
+  const [hovered, setHovered] = React.useState(false);
+
   return (
     <div
       data-overlay={overlay.id}
@@ -1743,13 +1745,20 @@ function OverlayRenderer({
         transformOrigin: "center center",
         cursor: "move",
         zIndex: 40,
-        outline: isSelected ? "2px solid oklch(0.72 0.22 55)" : "none",
+        outline: isSelected
+          ? "2px solid oklch(0.72 0.22 55)"
+          : hovered
+          ? "1px dashed oklch(0.72 0.22 55 / 0.45)"
+          : "none",
         outlineOffset: 1,
         boxShadow: isSelected ? "0 0 0 1px oklch(0.72 0.22 55 / 0.3)" : "none",
         pointerEvents: "all",
         userSelect: "none",
+        transition: "outline 0.12s ease",
       }}
       onMouseDown={(e) => onMouseDown(e, overlay)}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
     >
       {/* 图片 */}
       <img
