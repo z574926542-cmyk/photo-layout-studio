@@ -757,38 +757,54 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       i.onerror = reject;
       i.src = dataUrl;
     });
-    // 默认宽度 40%，高度按比例计算
-    const defaultW = 40;
-    const aspectRatio = img.naturalWidth / img.naturalHeight;
-    const defaultH = defaultW / aspectRatio;
+    // 默认宽度 40%，高度按比例计算，确保 w/h 始终等于图片原始宽高比
+    const ar = img.naturalWidth / img.naturalHeight;
+    let initW = 40;
+    let initH = initW / ar;
+    // 如果高度超过 80%，改用高度限制并重新计算宽度
+    if (initH > 80) { initH = 80; initW = initH * ar; }
     const overlay: OverlayItem = {
       id: genId(),
-      x: 30,
-      y: 30,
-      w: defaultW,
-      h: Math.min(defaultH, 80),
+      x: Math.max(0, Math.min(50, 50 - initW / 2)),
+      y: Math.max(0, Math.min(50, 50 - initH / 2)),
+      w: round(initW, 2),
+      h: round(initH, 2),
       dataUrl,
       opacity: 1,
       rotation: 0,
       label: file.name,
+      aspectRatio: ar,
     };
     dispatch({ type: "ADD_OVERLAY", overlay });
     toast.success(`装饰层「${file.name}」已添加`);
   }, []);
 
   const addOverlayFromDataUrl = useCallback((dataUrl: string, label?: string) => {
-    const overlay: OverlayItem = {
-      id: genId(),
-      x: 30,
-      y: 30,
-      w: 40,
-      h: 40,
-      dataUrl,
-      opacity: 1,
-      rotation: 0,
-      label,
-    };
-    dispatch({ type: "ADD_OVERLAY", overlay });
+    // 尝试获取图片宽高比，确保初始 w/h 贴合图片
+    const tryGetAspect = () => new Promise<number>((resolve) => {
+      const i = new Image();
+      i.onload = () => resolve(i.naturalWidth / i.naturalHeight);
+      i.onerror = () => resolve(1); // 失败时默认 1:1
+      i.src = dataUrl;
+    });
+    tryGetAspect().then((ar) => {
+      let initW = 40;
+      let initH = initW / ar;
+      if (initH > 80) { initH = 80; initW = initH * ar; }
+      const overlay: OverlayItem = {
+        id: genId(),
+        x: Math.max(0, Math.min(50, 50 - initW / 2)),
+        y: Math.max(0, Math.min(50, 50 - initH / 2)),
+        w: round(initW, 2),
+        h: round(initH, 2),
+        dataUrl,
+        opacity: 1,
+        rotation: 0,
+        label,
+        aspectRatio: ar,
+      };
+      dispatch({ type: "ADD_OVERLAY", overlay });
+    });
   }, []);
 
   const updateOverlay = useCallback((id: string, updates: Partial<OverlayItem>) => {

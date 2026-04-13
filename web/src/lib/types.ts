@@ -183,6 +183,8 @@ export interface OverlayItem {
   rotation: number;
   /** 标签（可选） */
   label?: string;
+  /** 图片原始宽高比（imgW/imgH），用于 resize 时锁定比例，确保选框始终贴合图片 */
+  aspectRatio?: number;
 }
 
 /** 预设模板 */

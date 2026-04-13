@@ -70,6 +70,7 @@ export default function StudioCanvas() {
   const scrollRef = useRef<HTMLDivElement>(null);
   // 用于原生事件处理器中访问最新状态（避免闭包问题）
   const slotsRef = useRef(slots);
+  const overlaysRef = useRef(overlays);
   const updateSlotRef = useRef(updateSlot);
   const imageEditSlotIdRef = useRef<string | null>(null); // 初始化为 null，由 useEffect 同步
   const dragRef = useRef<DragState>({ type: null, startX: 0, startY: 0, currentX: 0, currentY: 0 });
@@ -96,6 +97,7 @@ export default function StudioCanvas() {
   const [imageEditSlotId, setImageEditSlotId] = useState<string | null>(null);
   // 同步 ref，供原生事件处理器访问最新值
   useEffect(() => { slotsRef.current = slots; }, [slots]);
+  useEffect(() => { overlaysRef.current = overlays; }, [overlays]);
   useEffect(() => { updateSlotRef.current = updateSlot; }, [updateSlot]);
   useEffect(() => { imageEditSlotIdRef.current = imageEditSlotId; }, [imageEditSlotId]);
   // 图片调节拖拽状态（使用 ref 避免闭包问题）
@@ -861,10 +863,44 @@ export default function StudioCanvas() {
       } else if (od.type === "resize" && od.handle) {
         const h = od.handle;
         let nx = od.initX, ny = od.initY, nw = od.initW, nh = od.initH;
-        if (h.includes("e")) nw = Math.max(2, od.initW + dxPct);
-        if (h.includes("s")) nh = Math.max(2, od.initH + dyPct);
-        if (h.includes("w")) { const newW = Math.max(2, od.initW - dxPct); nx = od.initX + (od.initW - newW); nw = newW; }
-        if (h.includes("n")) { const newH = Math.max(2, od.initH - dyPct); ny = od.initY + (od.initH - newH); nh = newH; }
+        // 获取当前 overlay 的 aspectRatio，锁定宽高比确保选框始终贴合图片
+        const curOverlay = overlaysRef.current.find((o) => o.id === od.overlayId);
+        const ar = curOverlay?.aspectRatio;
+        if (ar && ar > 0) {
+          const isHoriz = h === 'e' || h === 'w';
+          const isVert = h === 'n' || h === 's';
+          if (isHoriz) {
+            if (h === 'e') nw = Math.max(2, od.initW + dxPct);
+            else { nw = Math.max(2, od.initW - dxPct); nx = od.initX + (od.initW - nw); }
+            nh = nw / ar;
+            ny = od.initY + (od.initH - nh) / 2;
+          } else if (isVert) {
+            if (h === 's') nh = Math.max(2, od.initH + dyPct);
+            else { nh = Math.max(2, od.initH - dyPct); ny = od.initY + (od.initH - nh); }
+            nw = nh * ar;
+            nx = od.initX + (od.initW - nw) / 2;
+          } else {
+            // 角手柄：取 dx/dy 中较大的变化量为主导
+            const absDx = Math.abs(dxPct), absDy = Math.abs(dyPct);
+            if (absDx >= absDy) {
+              if (h.includes('e')) nw = Math.max(2, od.initW + dxPct);
+              else { nw = Math.max(2, od.initW - dxPct); nx = od.initX + (od.initW - nw); }
+              nh = nw / ar;
+              if (h.includes('n')) ny = od.initY + (od.initH - nh);
+            } else {
+              if (h.includes('s')) nh = Math.max(2, od.initH + dyPct);
+              else { nh = Math.max(2, od.initH - dyPct); ny = od.initY + (od.initH - nh); }
+              nw = nh * ar;
+              if (h.includes('w')) nx = od.initX + (od.initW - nw);
+            }
+          }
+        } else {
+          // 没有 aspectRatio：自由缩放
+          if (h.includes("e")) nw = Math.max(2, od.initW + dxPct);
+          if (h.includes("s")) nh = Math.max(2, od.initH + dyPct);
+          if (h.includes("w")) { const newW = Math.max(2, od.initW - dxPct); nx = od.initX + (od.initW - newW); nw = newW; }
+          if (h.includes("n")) { const newH = Math.max(2, od.initH - dyPct); ny = od.initY + (od.initH - newH); nh = newH; }
+        }
         updateOverlay(od.overlayId, { x: round(clamp(nx, 0, 100), 2), y: round(clamp(ny, 0, 100), 2), w: round(nw, 2), h: round(nh, 2) });
       }
     };
@@ -1723,7 +1759,7 @@ function OverlayRenderer({
         style={{
           width: "100%",
           height: "100%",
-          objectFit: "contain",
+          objectFit: "fill", // w/h 已严格等于图片宽高比，直接填满不会拉伸
           display: "block",
           pointerEvents: "none",
           userSelect: "none",
