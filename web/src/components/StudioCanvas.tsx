@@ -1240,7 +1240,15 @@ function SlotRenderer({
       {/* 图片填充：直接相对 slot div 定位，无中间层 */}
       {asset && (
         <>
-          <AspectFillImage asset={asset} slot={slot} canvasW={canvasW} canvasH={canvasH} isEditMode={isImageEditMode} onImgRect={isImageEditMode ? handleImgRectUpdate : undefined} />
+          <AspectFillImage
+            asset={asset}
+            slot={slot}
+            canvasW={canvasW}
+            canvasH={canvasH}
+            isEditMode={isImageEditMode}
+            onImgRect={isImageEditMode ? handleImgRectUpdate : undefined}
+            onHitAreaMouseDown={isImageEditMode ? (e) => onMouseDown(e, slot) : undefined}
+          />
           {/* 图片调节模式标识角标：图框标签（蓝色） */}
           {isImageEditMode && (
             <div
@@ -1493,6 +1501,7 @@ function AspectFillImage({
   canvasH,
   isEditMode,
   onImgRect,
+  onHitAreaMouseDown,
 }: {
   asset: import("@/lib/types").Asset;
   slot: Slot;
@@ -1500,6 +1509,8 @@ function AspectFillImage({
   canvasH: number;  // 屏幕像素高（canvas.logicalHeight * zoom）
   isEditMode: boolean;
   onImgRect?: (rect: { left: number; top: number; renderW: number; renderH: number; baseScale: number }) => void;
+  /** 编辑态下点击图片拦截层时的回调（含溢出图框部分），用于转发拖动事件到图框 */
+  onHitAreaMouseDown?: (e: React.MouseEvent) => void;
 }) {
   // ── 追踪图片真实尺寸（防止 asset.naturalWidth/Height 为 0）──────────────
   const [loadedSize, setLoadedSize] = React.useState<{ w: number; h: number } | null>(
@@ -1604,6 +1615,36 @@ function AspectFillImage({
           ...editOutlineStyle,
         }}
       />
+      {/* 编辑模式：透明点击拦截层，覆盖完整图片范围（含溢出图框部分）
+           作用：阻止点击溢出图框的图片区域时事件冒泡到画布背景，
+           防止 handleMouseDown 误触发 exitImageEdit()
+           只有点击图片以外的空白区域才会退出编辑模式 */}
+      {isEditMode && !notReady && (
+        <div
+          data-img-edit-hitarea
+          style={{
+            position: "absolute",
+            left: imgLeft,
+            top: imgTop,
+            width: renderW,
+            height: renderH,
+            // 旋转与图片保持一致
+            transform: rotation !== 0 ? `rotate(${rotation}deg)` : undefined,
+            transformOrigin: "center center",
+            // 透明但可点击
+            background: "transparent",
+            cursor: "grab",
+            // 确保在图片上方但在控制点下方
+            zIndex: 42,
+          }}
+          onMouseDown={(e) => {
+            // 阻止冒泡到画布背景（防止 handleMouseDown 误触发 exitImageEdit）
+            e.stopPropagation();
+            // 转发事件到图框的 onMouseDown，保证拖动图片的逻辑正常工作
+            onHitAreaMouseDown?.(e);
+          }}
+        />
+      )}
       {/* 编辑模式：图片尺寸标签（橙色，显示在图片右下角） */}
       {isEditMode && !notReady && (
         <div
