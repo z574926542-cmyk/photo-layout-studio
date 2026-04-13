@@ -1759,7 +1759,7 @@ function OverlayRenderer({
         style={{
           width: "100%",
           height: "100%",
-          objectFit: "fill", // w/h 已严格等于图片宽高比，直接填满不会拉伸
+          objectFit: "contain", // 始终保持原始比例，防止旧数据或浮点误差导致拉伸
           display: "block",
           pointerEvents: "none",
           userSelect: "none",
