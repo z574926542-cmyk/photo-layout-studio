@@ -968,7 +968,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     } finally {
       dispatch({ type: "SET_EXPORTING", value: false });
     }
-  }, [state.canvas, state.slots, state.assets]);
+  }, [state.canvas, state.slots, state.assets, state.overlays]);
 
   // 另存为模板：将当前画布+底图+图框打包为 JSON 文件下载
   const saveAsTemplate = useCallback((name: string, author?: string, description?: string) => {
