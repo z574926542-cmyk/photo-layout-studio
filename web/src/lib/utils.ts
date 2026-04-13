@@ -269,6 +269,18 @@ export async function exportCanvasToPng(
           const cx = ox + ow / 2;
           const cy = oy + oh / 2;
 
+          // contain 等比缩放居中绘制（与预览的 objectFit:contain 保持一致）
+          const imgW = img.naturalWidth;
+          const imgH = img.naturalHeight;
+          const scaleX = ow / imgW;
+          const scaleY = oh / imgH;
+          const containScale = Math.min(scaleX, scaleY);
+          const drawW = imgW * containScale;
+          const drawH = imgH * containScale;
+          // 居中对齐：在 ow×oh 的矩形框内居中
+          const drawX = ox + (ow - drawW) / 2;
+          const drawY = oy + (oh - drawH) / 2;
+          // 旋转以矩形框中心为原点
           ctx.save();
           ctx.globalAlpha = overlay.opacity ?? 1;
           if (overlay.rotation) {
@@ -276,7 +288,7 @@ export async function exportCanvasToPng(
             ctx.rotate((overlay.rotation * Math.PI) / 180);
             ctx.translate(-cx, -cy);
           }
-          ctx.drawImage(img, ox, oy, ow, oh);
+          ctx.drawImage(img, drawX, drawY, drawW, drawH);
           ctx.restore();
           resolve();
         };
