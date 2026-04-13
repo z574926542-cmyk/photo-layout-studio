@@ -309,10 +309,11 @@ export default function StudioCanvas() {
         if (!e.shiftKey) {
           selectSlot(null);
           selectSlots([]);
+          selectOverlay(null);
         }
       }
     },
-    [mode, getCanvasPct, selectSlot, selectSlots, imageEditSlotId, exitImageEdit, isSpaceDown]
+    [mode, getCanvasPct, selectSlot, selectSlots, selectOverlay, imageEditSlotId, exitImageEdit, isSpaceDown]
   );
 
   // ─── 图框鼠标按下（选择/移动/图片调节） ──────────────────
@@ -350,6 +351,7 @@ export default function StudioCanvas() {
       }
 
       // 普通点击
+      selectOverlay(null);
       if (!selectedSlotIds.includes(slot.id)) {
         selectSlots([slot.id]);
       }
@@ -373,7 +375,7 @@ export default function StudioCanvas() {
         setIsDragging(true);
       }
     },
-    [mode, getCanvasPct, selectSlot, selectSlots, selectedSlotIds, slots, imageEditSlotId]
+    [mode, getCanvasPct, selectSlot, selectSlots, selectOverlay, selectedSlotIds, slots, imageEditSlotId]
   );
   // ─── 图框双击（进入图片调节模式）） ────────────────────────
   const handleSlotDoubleClick = useCallback(
